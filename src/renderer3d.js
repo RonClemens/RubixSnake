@@ -5,15 +5,7 @@ var Renderer3D = (function () {
 
   function init(container) {
     if (renderer) {
-      // reparent canvas to new container if needed
-      if (renderer.domElement.parentNode !== container) {
-        container.appendChild(renderer.domElement);
-        var w = container.offsetWidth || 340;
-        var h = container.offsetHeight || 260;
-        renderer.setSize(w, h);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-      }
+      container.appendChild(renderer.domElement);
       return;
     }
 
@@ -85,6 +77,7 @@ var Renderer3D = (function () {
       var mesh = new THREE.Mesh(geo, mat);
 
       // Orient mesh: local +X = fwd, local +Y = up, local +Z = rgt
+      // rgt is derived from fwd × up so flipped segments are handled automatically
       var fwd = new THREE.Vector3().fromArray(seg.fwd);
       var up  = new THREE.Vector3().fromArray(seg.up);
       var rgt = new THREE.Vector3().crossVectors(fwd, up).normalize();
@@ -111,9 +104,10 @@ var Renderer3D = (function () {
   }
 
   // right-isosceles triangular prism: legs along +Y and +Z, extruded along +X
+  // h = L so the hypotenuse (L√2) matches the diagonal position advance
   function buildSegGeo(L) {
     var geo = new THREE.BufferGeometry();
-    var h = L * 0.5;
+    var h = L;
     // 6 vertices: front face (x=0) and back face (x=L)
     var verts = new Float32Array([
       // front tri (x=0)
