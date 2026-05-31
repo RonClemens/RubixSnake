@@ -80,64 +80,67 @@ var Snake = (function () {
   }
 
   // ── 3D layout ──────────────────────────────────────────────────────────────
-  // Returns array of {pos:[x,y,z], rot:[rx,ry,rz], idx} for Three.js rendering
-  // Uses the same alternating-axis logic as the physical puzzle.
-  // Segment 0 sits at origin pointing +X.
-  // The rotation axis alternates: odd joints rotate around Z, even around Y.
-  // (This is a simplified but visually correct approximation.)
+  // Returns array of {pos, fwd, up, idx} for Three.js rendering.
+  //
+  // Physical model: each segment is a right-isosceles triangular prism.
+  // Adjacent segments connect at the hypotenuse face and alternate orientation
+  // (one has the right-angle vertex at the "near" corner, the next at the "far"
+  // corner). This creates the familiar zigzag even in the straight position.
+  //
+  // Position advance mirrors the 2D layout:
+  //   even segment → next pos = pos + fwd*L + up*L  (along the hypotenuse diagonal)
+  //   odd  segment → next pos = pos + (-up)*L        (back along the leg)
+  //
+  // Joint rotation alternates plane:
+  //   even joint index → rotate in fwd/up plane
+  //   odd  joint index → rotate in fwd/rgt plane
+  //
+  // For odd (flipped) segments the up vector is negated in the output so the
+  // mesh's right-angle vertex always matches pos.
   function layout3D(joints) {
-    var L = 1; // segment length in world units
-    // We track position + orientation as 3 basis vectors (forward, up, right)
-    var pos = [0, 0, 0];
-    var fwd = [1, 0, 0];
-    var up  = [0, 1, 0];
-    var rgt = [0, 0, 1];
-
+    var L = 1;
+    var pos  = [0, 0, 0];
+    var fwd  = [1, 0, 0];
+    var up   = [0, 1, 0];
+    var rgt  = [0, 0, 1];
+    var flip = false;
     var result = [];
 
-    function addSeg(i, p, f, u, r) {
+    for (var i = 0; i <= joints.length; i++) {
+      // Output: negate up for flipped segments so mesh right-angle vertex = pos
       result.push({
-        pos: p.slice(),
-        fwd: f.slice(),
-        up:  u.slice(),
+        pos: pos.slice(),
+        fwd: fwd.slice(),
+        up:  flip ? vneg(up) : up.slice(),
         idx: i,
       });
-    }
 
-    addSeg(0, pos, fwd, up, rgt);
+      if (i >= joints.length) break;
 
-    for (var i = 0; i < joints.length; i++) {
+      // Advance position (zigzag matching the physical geometry)
+      if (!flip) {
+        pos = vadd(vadd(pos, vscale(fwd, L)), vscale(up, L));
+      } else {
+        pos = vadd(pos, vscale(vneg(up), L));
+      }
+      flip = !flip;
+
+      // Apply joint rotation (alternating planes)
       var t = joints[i];
-      // Advance position by one segment length along fwd
-      pos = vadd(pos, vscale(fwd, L));
-
-      // Apply rotation at joint based on turn type and parity
-      // Even joints (0-indexed) turn in the up/fwd plane (left/right from above)
-      // Odd joints turn in the rgt/fwd plane (up/down)
-      var parity = i % 2;
-      if (t === 'R') {
-        if (parity === 0) {
-          // turn right: new_fwd = rgt, new_rgt = -fwd
-          var nf = rgt.slice(), nr = vneg(fwd);
-          fwd = nf; rgt = nr;
+      if (t !== 'S') {
+        var sign = (t === 'R') ? 1 : -1;
+        if (i % 2 === 0) {
+          // even joint: rotate in fwd/up plane
+          var nf  = vscale(up,  sign);
+          var nu  = vscale(fwd, -sign);
+          fwd = nf; up = nu;
         } else {
-          // turn up: new_fwd = -up, new_up = fwd
-          var nf2 = vneg(up), nu = fwd.slice();
-          fwd = nf2; up = nu;
-        }
-      } else if (t === 'L') {
-        if (parity === 0) {
-          // turn left: new_fwd = -rgt, new_rgt = fwd
-          var nf3 = vneg(rgt), nr2 = fwd.slice();
-          fwd = nf3; rgt = nr2;
-        } else {
-          // turn down: new_fwd = up, new_up = -fwd
-          var nf4 = up.slice(), nu2 = vneg(fwd);
-          fwd = nf4; up = nu2;
+          // odd joint: rotate in fwd/rgt plane
+          var nf2 = vscale(rgt, sign);
+          var nr2 = vscale(fwd, -sign);
+          fwd = nf2; rgt = nr2;
         }
       }
-
-      addSeg(i + 1, pos, fwd, up, rgt);
     }
 
     return result;
