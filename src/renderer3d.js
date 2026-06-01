@@ -1,18 +1,25 @@
 // renderer3d.js — Three.js 3D snake renderer
+// Uses actual vertex positions from Snake.layout3D (no transform matrices).
 
 var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], animFrame = null;
+  var spherical = { theta: 0.6, phi: 1.0, r: 15 };
+  var orbitCenter = new THREE.Vector3();
+
+  // Shared index buffer — same topology for every triangular prism:
+  // verts 0-2 = front triangle (f0,f1,f2), verts 3-5 = back (b0,b1,b2)
+  var PRISM_IDX = [
+    0,2,1,   3,4,5,     // front + back caps
+    0,1,4,  0,4,3,     // leg1 rectangular face
+    0,3,5,  0,5,2,     // leg2 rectangular face
+    1,2,5,  1,5,4,     // hypotenuse face
+  ];
 
   function init(container) {
     if (renderer) {
-      // reparent canvas to new container if needed
       if (renderer.domElement.parentNode !== container) {
         container.appendChild(renderer.domElement);
-        var w = container.offsetWidth || 340;
-        var h = container.offsetHeight || 260;
-        renderer.setSize(w, h);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
+        resize(container);
       }
       return;
     }
@@ -20,184 +27,113 @@ var Renderer3D = (function () {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0d1117);
 
-    var w = container.offsetWidth || 340;
-    var h = container.offsetHeight || 300;
-    camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 100);
-    camera.position.set(8, 6, 12);
-    camera.lookAt(0, 0, 0);
+    var w = container.offsetWidth  || 340;
+    var h = container.offsetHeight || 260;
+    camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 200);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(w, h);
     container.appendChild(renderer.domElement);
 
-    // lights
-    var amb = new THREE.AmbientLight(0xffffff, 0.55);
-    scene.add(amb);
-    var dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(5, 10, 7);
-    scene.add(dir);
-    var dir2 = new THREE.DirectionalLight(0x8888ff, 0.3);
-    dir2.position.set(-5, -4, -5);
-    scene.add(dir2);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    var d1 = new THREE.DirectionalLight(0xffffff, 0.9);
+    d1.position.set(5, 8, 6); scene.add(d1);
+    var d2 = new THREE.DirectionalLight(0x8888ff, 0.3);
+    d2.position.set(-4, -3, -5); scene.add(d2);
 
-    // simple orbit via pointer drag
-    addOrbitControl(container);
+    addOrbit(container);
 
-    // resize observer
-    var ro = new ResizeObserver(function () {
-      var nw = container.offsetWidth;
-      var nh = container.offsetHeight;
-      camera.aspect = nw / nh;
-      camera.updateProjectionMatrix();
-      renderer.setSize(nw, nh);
-    });
-    ro.observe(container);
+    new ResizeObserver(function () { resize(container); }).observe(container);
 
-    loop();
+    (function loop() {
+      animFrame = requestAnimationFrame(loop);
+      renderer.render(scene, camera);
+    })();
   }
 
-  function loop() {
-    animFrame = requestAnimationFrame(loop);
-    renderer.render(scene, camera);
+  function resize(container) {
+    var w = container.offsetWidth || 340;
+    var h = container.offsetHeight || 260;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
   }
 
-  // ── build/update scene from joint array ────────────────────────────────────
+  // Build/rebuild scene from joint array
   function update(joints) {
-    // clear old meshes
-    meshes.forEach(function (m) { scene.remove(m); });
+    meshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     meshes = [];
 
-    var layout = Snake.layout3D(joints);
-    var L = 1.0; // segment length
+    Snake.layout3D(joints).forEach(function (seg) {
+      var f = seg.f, b = seg.b;
+      var v = new Float32Array([
+        f[0][0],f[0][1],f[0][2],
+        f[1][0],f[1][1],f[1][2],
+        f[2][0],f[2][1],f[2][2],
+        b[0][0],b[0][1],b[0][2],
+        b[1][0],b[1][1],b[1][2],
+        b[2][0],b[2][1],b[2][2],
+      ]);
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(v, 3));
+      geo.setIndex(PRISM_IDX);
+      geo.computeVertexNormals();
 
-    // Segment geometry: a right-isosceles triangular prism
-    // Legs = L, length along fwd = L
-    var geo = buildSegGeo(L);
-
-    layout.forEach(function (seg) {
-      var color = Snake.segColor(seg.idx).h;
-      var mat = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(color),
-        shininess: 60,
-        specular: new THREE.Color(0x444444),
-      });
-      var mesh = new THREE.Mesh(geo, mat);
-
-      // Orient mesh: local +X = fwd, local +Y = up, local +Z = rgt
-      var fwd = new THREE.Vector3().fromArray(seg.fwd);
-      var up  = new THREE.Vector3().fromArray(seg.up);
-      var rgt = new THREE.Vector3().crossVectors(fwd, up).normalize();
-      // Build rotation matrix from basis vectors
-      var m4 = new THREE.Matrix4();
-      m4.makeBasis(fwd, up, rgt);
-      mesh.setRotationFromMatrix(m4);
-      mesh.position.fromArray(seg.pos);
-
+      var mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+        color: new THREE.Color(Snake.segColor(seg.idx).h),
+        shininess: 80,
+        side: THREE.DoubleSide,
+      }));
       scene.add(mesh);
       meshes.push(mesh);
     });
 
-    // re-center camera on bounding box
-    if (layout.length) {
-      var pts = layout.map(function (s) { return new THREE.Vector3().fromArray(s.pos); });
-      var box = new THREE.Box3().setFromPoints(pts);
-      var ctr = new THREE.Vector3();
-      box.getCenter(ctr);
-      var sz = box.getSize(new THREE.Vector3()).length();
-      camera.position.copy(ctr).add(new THREE.Vector3(sz, sz * 0.7, sz * 1.2));
-      camera.lookAt(ctr);
+    // Fit camera around bounding box
+    if (meshes.length) {
+      var box = new THREE.Box3();
+      meshes.forEach(function (m) { box.expandByObject(m); });
+      box.getCenter(orbitCenter);
+      spherical.r = box.getSize(new THREE.Vector3()).length() * 1.2;
+      updateCamera();
     }
   }
 
-  // right-isosceles triangular prism: legs along +Y and +Z, extruded along +X
-  function buildSegGeo(L) {
-    var geo = new THREE.BufferGeometry();
-    var h = L * 0.5;
-    // 6 vertices: front face (x=0) and back face (x=L)
-    var verts = new Float32Array([
-      // front tri (x=0)
-       0, 0, 0,
-       0, h, 0,
-       0, 0, h,
-      // back tri (x=L)
-       L, 0, 0,
-       L, h, 0,
-       L, 0, h,
-    ]);
-    // indices: 2 end caps + 3 rectangular side faces
-    var idx = [
-      // front cap
-      0, 2, 1,
-      // back cap
-      3, 4, 5,
-      // side 1: bottom (y=0)
-      0, 3, 5,  0, 5, 2,
-      // side 2: left (z=0)
-      0, 1, 4,  0, 4, 3,
-      // hypotenuse face
-      1, 2, 5,  1, 5, 4,
-    ];
-    geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    return geo;
+  function updateCamera() {
+    camera.position.set(
+      orbitCenter.x + spherical.r * Math.sin(spherical.phi) * Math.cos(spherical.theta),
+      orbitCenter.y + spherical.r * Math.cos(spherical.phi),
+      orbitCenter.z + spherical.r * Math.sin(spherical.phi) * Math.sin(spherical.theta)
+    );
+    camera.lookAt(orbitCenter);
   }
 
-  // ── minimal orbit (rotate camera around centre) ────────────────────────────
-  function addOrbitControl(el) {
+  function addOrbit(el) {
     var drag = false, lx = 0, ly = 0;
-    var spherical = { theta: Math.PI * 0.25, phi: Math.PI * 0.35, r: 0 };
 
-    function updateCamera() {
-      var ctr = new THREE.Vector3();
-      if (meshes.length) {
-        var box = new THREE.Box3();
-        meshes.forEach(function (m) { box.expandByObject(m); });
-        box.getCenter(ctr);
-        spherical.r = box.getSize(new THREE.Vector3()).length() * 1.2;
-      } else {
-        spherical.r = 15;
-      }
-      camera.position.set(
-        ctr.x + spherical.r * Math.sin(spherical.phi) * Math.cos(spherical.theta),
-        ctr.y + spherical.r * Math.cos(spherical.phi),
-        ctr.z + spherical.r * Math.sin(spherical.phi) * Math.sin(spherical.theta)
-      );
-      camera.lookAt(ctr);
+    function onMove(dx, dy) {
+      spherical.theta -= dx * 0.008;
+      spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.008));
+      updateCamera();
     }
 
     el.addEventListener('mousedown', function (e) { drag = true; lx = e.clientX; ly = e.clientY; });
-    window.addEventListener('mouseup', function () { drag = false; });
+    window.addEventListener('mouseup',  function ()  { drag = false; });
     el.addEventListener('mousemove', function (e) {
       if (!drag) return;
-      var dx = e.clientX - lx, dy = e.clientY - ly;
+      onMove(e.clientX - lx, e.clientY - ly);
       lx = e.clientX; ly = e.clientY;
-      spherical.theta -= dx * 0.008;
-      spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.008));
-      updateCamera();
     });
-    // touch
-    var lastTouch = null;
-    el.addEventListener('touchstart', function (e) { if (e.touches.length === 1) lastTouch = e.touches[0]; });
-    el.addEventListener('touchmove', function (e) {
-      if (e.touches.length !== 1 || !lastTouch) return;
+
+    var lt = null;
+    el.addEventListener('touchstart', function (e) { if (e.touches.length === 1) lt = e.touches[0]; }, { passive: true });
+    el.addEventListener('touchmove',  function (e) {
+      if (e.touches.length !== 1 || !lt) return;
       e.preventDefault();
-      var dx = e.touches[0].clientX - lastTouch.clientX;
-      var dy = e.touches[0].clientY - lastTouch.clientY;
-      lastTouch = e.touches[0];
-      spherical.theta -= dx * 0.008;
-      spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.008));
-      updateCamera();
+      onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY);
+      lt = e.touches[0];
     }, { passive: false });
   }
 
-  function destroy() {
-    if (animFrame) cancelAnimationFrame(animFrame);
-    animFrame = null;
-    if (renderer) { renderer.dispose(); renderer = null; }
-    scene = null; camera = null; meshes = [];
-  }
-
-  return { init: init, update: update, destroy: destroy };
+  return { init: init, update: update };
 })();
