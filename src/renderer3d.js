@@ -8,13 +8,16 @@ var Renderer3D = (function () {
   var spherical = { theta: Math.PI / 2, phi: Math.PI / 3, r: 15 };
   var orbitCenter = new THREE.Vector3();
 
-  // Shared index buffer — same topology for every triangular prism:
-  // verts 0-2 = front triangle (f0,f1,f2), verts 3-5 = back (b0,b1,b2)
+  // Shared index buffer — same topology for every triangular prism.
+  // verts 0-2 = front triangle (f0,f1,f2), verts 3-5 = back (b0,b1,b2).
+  // The hypotenuse face is intentionally omitted: it is the internal diagonal
+  // shared between adjacent even/odd segments that together fill the square
+  // cross-section.  Rendering it causes odd segments to bleed through from -Z
+  // and even segments to bleed through from +Z.
   var PRISM_IDX = [
-    0,2,1,   3,4,5,     // front + back caps
-    0,1,4,  0,4,3,     // leg1 rectangular face
-    0,3,5,  0,5,2,     // leg2 rectangular face
-    1,2,5,  1,5,4,     // hypotenuse face
+    0,2,1,   3,4,5,     // front + back triangular caps
+    0,1,4,  0,4,3,     // leg1 square face
+    0,3,5,  0,5,2,     // leg2 square face
   ];
 
   function init(container) {
@@ -86,7 +89,6 @@ var Renderer3D = (function () {
         color: new THREE.Color(Snake.segColor(seg.idx).h),
         shininess: 60,
         flatShading: true,
-        side: THREE.DoubleSide,
       }));
       scene.add(mesh);
       meshes.push(mesh);
