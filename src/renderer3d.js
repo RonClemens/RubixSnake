@@ -47,6 +47,9 @@ var Renderer3D = (function () {
     var d2 = new THREE.DirectionalLight(0x8888ff, 0.3);
     d2.position.set(-4, -3, -5); scene.add(d2);
 
+    // X=red, Y=green, Z=blue
+    scene.add(new THREE.AxesHelper(5));
+
     addOrbit(container);
 
     new ResizeObserver(function () { resize(container); }).observe(container);
