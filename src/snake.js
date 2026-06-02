@@ -85,15 +85,15 @@ var Snake = (function () {
       var f0, f1, f2;
 
       if (!odd) {
-        // right-angle at pos; legs toward leg1 and leg2
-        f0 = pos.slice();
-        f1 = vadd(pos, leg1);
-        f2 = vadd(pos, leg2);
-      } else {
-        // right-angle at diagonally opposite corner
+        // Even: right-angle at opposite corner → hyp face normal (0,−Y,−Z) = bottom face
         f0 = vadd(vadd(pos, leg1), leg2);
         f1 = vadd(pos, leg2);
         f2 = vadd(pos, leg1);
+      } else {
+        // Odd: right-angle at pos → hyp face normal (0,+Y,+Z) = top face
+        f0 = pos.slice();
+        f1 = vadd(pos, leg1);
+        f2 = vadd(pos, leg2);
       }
 
       segs.push({
