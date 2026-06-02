@@ -25,6 +25,7 @@ var Snake = (function () {
 
   // ── vector helpers ─────────────────────────────────────────────────────────
   function vadd(a, b)   { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+  function vsub(a, b)   { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
   function vcross(a, b) {
     return [
       a[1]*b[2] - a[2]*b[1],
@@ -72,35 +73,35 @@ var Snake = (function () {
 
   // ── 3D layout ──────────────────────────────────────────────────────────────
   // Returns array of { idx, f:[f0,f1,f2], b:[b0,b1,b2] }
-  // f0 = right-angle vertex (front), f1/f2 = leg tips, b* = same shifted by fwd.
+  // pos tracks the midpoint of each segment's hypotenuse edge so the fwd axis
+  // passes through it.  yOff = (leg1+leg2)/2 shifts vertices accordingly.
+  // Even: right-angle at pos-yOff (below axis), hyp face = -Y (bottom).
+  // Odd:  right-angle at pos+yOff (above axis), hyp face = +Y (top).
   function layout3D(joints) {
     var pos  = [0, 0, 0];
     var fwd  = [1, 0, 0];
-    // Rotate the cross-section 45° around fwd so the hypotenuse face is
-    // horizontal (perpendicular to Y).  With leg1=(0,1,0) and leg2=(0,0,1)
-    // the hyp was at 45° in Y-Z.  Rotating 45° CW gives:
-    //   leg1 = (0, 1/√2,  1/√2)  →  upper-right diagonal
-    //   leg2 = (0, 1/√2, -1/√2)  →  upper-left  diagonal
-    // Combined cross-section is then a diamond (square rotated 45°).
-    var s = Math.SQRT2 / 2;          // 1/√2 ≈ 0.7071
+    // Legs rotated 45° so hyp face is horizontal (perpendicular to Y).
+    var s = Math.SQRT2 / 2;          // 1/sqrt(2)
     var leg1 = [0,  s,  s];
     var leg2 = [0,  s, -s];
     var segs = [];
 
     for (var i = 0; i < 24; i++) {
       var odd = i & 1;
+      // Offset from right-angle vertex to hyp midpoint = (leg1+leg2)/2
+      var yOff = [(leg1[0]+leg2[0])/2, (leg1[1]+leg2[1])/2, (leg1[2]+leg2[2])/2];
       var f0, f1, f2;
 
       if (!odd) {
-        // Even: right-angle at pos → hyp face normal (0,−1,0) = −Y (bottom face) ✓
-        f0 = pos.slice();
-        f1 = vadd(pos, leg1);
-        f2 = vadd(pos, leg2);
+        // Even: right-angle below fwd axis
+        f0 = vsub(pos, yOff);
+        f1 = vsub(vadd(pos, leg1), yOff);
+        f2 = vsub(vadd(pos, leg2), yOff);
       } else {
-        // Odd: right-angle at opposite corner → hyp face normal (0,+1,0) = +Y (top face) ✓
-        f0 = vadd(vadd(pos, leg1), leg2);
-        f1 = vadd(pos, leg2);
-        f2 = vadd(pos, leg1);
+        // Odd: right-angle above fwd axis
+        f0 = vadd(pos, yOff);
+        f1 = vsub(vadd(pos, leg2), yOff);
+        f2 = vsub(vadd(pos, leg1), yOff);
       }
 
       segs.push({
