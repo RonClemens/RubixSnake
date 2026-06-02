@@ -76,8 +76,15 @@ var Snake = (function () {
   function layout3D(joints) {
     var pos  = [0, 0, 0];
     var fwd  = [1, 0, 0];
-    var leg1 = [0, 1, 0];   // hinge axis for ODD  joints
-    var leg2 = [0, 0, 1];   // hinge axis for EVEN joints
+    // Rotate the cross-section 45° around fwd so the hypotenuse face is
+    // horizontal (perpendicular to Y).  With leg1=(0,1,0) and leg2=(0,0,1)
+    // the hyp was at 45° in Y-Z.  Rotating 45° CW gives:
+    //   leg1 = (0, 1/√2,  1/√2)  →  upper-right diagonal
+    //   leg2 = (0, 1/√2, -1/√2)  →  upper-left  diagonal
+    // Combined cross-section is then a diamond (square rotated 45°).
+    var s = Math.SQRT2 / 2;          // 1/√2 ≈ 0.7071
+    var leg1 = [0,  s,  s];
+    var leg2 = [0,  s, -s];
     var segs = [];
 
     for (var i = 0; i < 24; i++) {
@@ -85,15 +92,15 @@ var Snake = (function () {
       var f0, f1, f2;
 
       if (!odd) {
-        // Even: right-angle at opposite corner → hyp face normal (0,−Y,−Z) = bottom face
-        f0 = vadd(vadd(pos, leg1), leg2);
-        f1 = vadd(pos, leg2);
-        f2 = vadd(pos, leg1);
-      } else {
-        // Odd: right-angle at pos → hyp face normal (0,+Y,+Z) = top face
+        // Even: right-angle at pos → hyp face normal (0,−1,0) = −Y (bottom face) ✓
         f0 = pos.slice();
         f1 = vadd(pos, leg1);
         f2 = vadd(pos, leg2);
+      } else {
+        // Odd: right-angle at opposite corner → hyp face normal (0,+1,0) = +Y (top face) ✓
+        f0 = vadd(vadd(pos, leg1), leg2);
+        f1 = vadd(pos, leg2);
+        f2 = vadd(pos, leg1);
       }
 
       segs.push({
