@@ -3,7 +3,9 @@
 
 var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], animFrame = null;
-  var spherical = { theta: 0.6, phi: 1.0, r: 15 };
+  // theta=π/2 → camera in Y-Z plane so the X-extending snake reads horizontally.
+  // phi=π/3  → 60° from vertical (30° above horizontal) for a natural elevation.
+  var spherical = { theta: Math.PI / 2, phi: Math.PI / 3, r: 15 };
   var orbitCenter = new THREE.Vector3();
 
   // Shared index buffer — same topology for every triangular prism:
@@ -94,7 +96,12 @@ var Renderer3D = (function () {
       var box = new THREE.Box3();
       meshes.forEach(function (m) { box.expandByObject(m); });
       box.getCenter(orbitCenter);
-      spherical.r = box.getSize(new THREE.Vector3()).length() * 1.2;
+      // For elongated snakes use half-diagonal so the cross-section stays visible;
+      // for compact shapes the full diagonal still gives a good framing.
+      var size = box.getSize(new THREE.Vector3());
+      var diag = size.length();
+      var shortSide = Math.min(size.x, size.y, size.z);
+      spherical.r = Math.max(diag * 0.7, shortSide * 6, 3);
       updateCamera();
     }
   }
