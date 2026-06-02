@@ -47,8 +47,10 @@ var Renderer3D = (function () {
     var d2 = new THREE.DirectionalLight(0x8888ff, 0.3);
     d2.position.set(-4, -3, -5); scene.add(d2);
 
-    // X=red, Y=green, Z=blue — repositioned to orbit center in update()
-    axesHelper = new THREE.AxesHelper(3);
+    // X=red, Y=green, Z=blue — always drawn on top, repositioned in update()
+    axesHelper = new THREE.AxesHelper(4);
+    axesHelper.material.depthTest = false;
+    axesHelper.renderOrder = 999;
     scene.add(axesHelper);
 
     addOrbit(container);
