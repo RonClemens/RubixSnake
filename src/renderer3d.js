@@ -80,11 +80,12 @@ var Renderer3D = (function () {
       var geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(v, 3));
       geo.setIndex(PRISM_IDX);
-      geo.computeVertexNormals();
-
+      // flatShading computes per-triangle normals so each prism face is
+      // rendered as a crisp flat plane — no rounded-edge artifacts.
       var mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
         color: new THREE.Color(Snake.segColor(seg.idx).h),
-        shininess: 80,
+        shininess: 60,
+        flatShading: true,
         side: THREE.DoubleSide,
       }));
       scene.add(mesh);
