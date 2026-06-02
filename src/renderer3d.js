@@ -2,7 +2,7 @@
 // Uses actual vertex positions from Snake.layout3D (no transform matrices).
 
 var Renderer3D = (function () {
-  var scene, camera, renderer, meshes = [], animFrame = null;
+  var scene, camera, renderer, meshes = [], axesHelper = null, animFrame = null;
   // theta=π/2 → camera in Y-Z plane so the X-extending snake reads horizontally.
   // phi=π/3  → 60° from vertical (30° above horizontal) for a natural elevation.
   var spherical = { theta: Math.PI / 2, phi: Math.PI / 3, r: 15 };
@@ -47,8 +47,9 @@ var Renderer3D = (function () {
     var d2 = new THREE.DirectionalLight(0x8888ff, 0.3);
     d2.position.set(-4, -3, -5); scene.add(d2);
 
-    // X=red, Y=green, Z=blue
-    scene.add(new THREE.AxesHelper(5));
+    // X=red, Y=green, Z=blue — repositioned to orbit center in update()
+    axesHelper = new THREE.AxesHelper(3);
+    scene.add(axesHelper);
 
     addOrbit(container);
 
@@ -108,6 +109,7 @@ var Renderer3D = (function () {
       var diag = size.length();
       var shortSide = Math.min(size.x, size.y, size.z);
       spherical.r = Math.max(diag * 0.7, shortSide * 6, 3);
+      if (axesHelper) axesHelper.position.copy(orbitCenter);
       updateCamera();
     }
   }
