@@ -134,10 +134,9 @@ var Renderer3D = (function () {
       var shortSide = Math.min(size.x, size.y, size.z);
       spherical.r = Math.max(diag * 0.7, shortSide * 6, 3);
       if (axesHelper) {
-        axesHelper.position.copy(orbitCenter);
         var offsets = [[4.4,0,0],[0,4.4,0],[0,0,4.4]];
         axesLabels.forEach(function (s, i) {
-          s.position.set(orbitCenter.x + offsets[i][0], orbitCenter.y + offsets[i][1], orbitCenter.z + offsets[i][2]);
+          s.position.set(offsets[i][0], offsets[i][1], offsets[i][2]);
         });
       }
       updateCamera();
