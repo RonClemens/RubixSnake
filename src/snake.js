@@ -73,12 +73,14 @@ var Snake = (function () {
 
   // ── 3D layout ──────────────────────────────────────────────────────────────
   function layout3D(joints) {
-    // Single segment at origin: right-angle at origin, leg1=+Y, leg2=+Z, depth=+X.
+    // Single segment centered on hyp midpoint at world origin.
+    // X-axis passes through hyp midpoint (0,0,0) and (1,0,0).
+    // Right-angle vertex at (0,-0.5,-0.5), leg tips at (0,0.5,-0.5) and (0,-0.5,0.5).
     var segs = [];
     segs.push({
       idx: 0,
-      f: [[0,0,0], [0,1,0], [0,0,1]],
-      b: [[1,0,0], [1,1,0], [1,0,1]],
+      f: [[0,-0.5,-0.5], [0,0.5,-0.5], [0,-0.5,0.5]],
+      b: [[1,-0.5,-0.5], [1,0.5,-0.5], [1,-0.5,0.5]],
     });
     return segs;
   }
