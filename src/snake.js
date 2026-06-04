@@ -73,13 +73,15 @@ var Snake = (function () {
 
   // ── 3D layout ──────────────────────────────────────────────────────────────
   function layout3D(joints) {
-    // Single segment at origin for calibration.
-    // Right-angle at (0,0,0), leg1 along +Y, leg2 along +Z, depth along +X.
+    // Single segment rotated 45° around Y-axis.
+    // Original: right-angle at origin, leg1=+Y, leg2=+Z, depth=+X.
+    // After Y-45° rotation: x'=(x+z)/√2, y'=y, z'=(-x+z)/√2
+    var s = Math.SQRT2 / 2;
     var segs = [];
     segs.push({
       idx: 0,
-      f: [[0,0,0], [0,1,0], [0,0,1]],
-      b: [[1,0,0], [1,1,0], [1,0,1]],
+      f: [[0,0,0], [0,1,0], [s,0,s]],
+      b: [[s,0,-s], [s,1,-s], [s*2,0,0]],
     });
     return segs;
   }
