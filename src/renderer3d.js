@@ -5,7 +5,7 @@ var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], axesHelper = null, axesLabels = [], animFrame = null;
   // theta=π/2 → camera in Y-Z plane so the X-extending snake reads horizontally.
   // phi=π/3  → 60° from vertical (30° above horizontal) for a natural elevation.
-  var spherical = { theta: Math.PI / 4, phi: Math.PI / 2, r: 15 };
+  var spherical = { theta: Math.PI, phi: Math.PI / 2, r: 4 };
   var orbitCenter = new THREE.Vector3();
 
   var PRISM_IDX = [
