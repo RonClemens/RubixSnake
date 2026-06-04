@@ -67,7 +67,7 @@ var Renderer3D = (function () {
       var mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
       var sprite = new THREE.Sprite(mat);
       sprite.position.set(d.pos[0], d.pos[1], d.pos[2]);
-      sprite.scale.set(0.5, 0.5, 0.5);
+      sprite.scale.set(0.175, 0.175, 0.175);
       sprite.renderOrder = 1000;
       scene.add(sprite);
       return sprite;
@@ -168,13 +168,22 @@ var Renderer3D = (function () {
       lx = e.clientX; ly = e.clientY;
     });
 
-    var lt = null;
-    el.addEventListener('touchstart', function (e) { if (e.touches.length === 1) lt = e.touches[0]; }, { passive: true });
-    el.addEventListener('touchmove',  function (e) {
-      if (e.touches.length !== 1 || !lt) return;
-      e.preventDefault();
-      onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY);
-      lt = e.touches[0];
+    var lt = null, lpinch = null;
+    el.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 1) { lt = e.touches[0]; lpinch = null; }
+      if (e.touches.length === 2) { lpinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); lt = null; }
+    }, { passive: true });
+    el.addEventListener('touchmove', function (e) {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        if (lpinch) { spherical.r = Math.max(1, spherical.r * (lpinch / dist)); updateCamera(); }
+        lpinch = dist;
+      } else if (e.touches.length === 1 && lt) {
+        e.preventDefault();
+        onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY);
+        lt = e.touches[0];
+      }
     }, { passive: false });
   }
 
