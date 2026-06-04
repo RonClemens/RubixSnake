@@ -34,6 +34,7 @@ var Renderer3D = (function () {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(w, h);
+    renderer.domElement.style.touchAction = 'none';
     container.appendChild(renderer.domElement);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -67,7 +68,7 @@ var Renderer3D = (function () {
       var mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
       var sprite = new THREE.Sprite(mat);
       sprite.position.set(d.pos[0], d.pos[1], d.pos[2]);
-      sprite.scale.set(0.175, 0.175, 0.175);
+      sprite.scale.set(0.7, 0.7, 0.7);
       sprite.renderOrder = 1000;
       scene.add(sprite);
       return sprite;
@@ -171,8 +172,12 @@ var Renderer3D = (function () {
     var lt = null, lpinch = null;
     el.addEventListener('touchstart', function (e) {
       if (e.touches.length === 1) { lt = e.touches[0]; lpinch = null; }
-      if (e.touches.length === 2) { lpinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); lt = null; }
-    }, { passive: true });
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        lpinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        lt = null;
+      }
+    }, { passive: false });
     el.addEventListener('touchmove', function (e) {
       if (e.touches.length === 2) {
         e.preventDefault();
