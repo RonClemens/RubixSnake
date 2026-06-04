@@ -72,61 +72,15 @@ var Snake = (function () {
   }
 
   // ── 3D layout ──────────────────────────────────────────────────────────────
-  // Returns array of { idx, f:[f0,f1,f2], b:[b0,b1,b2] }
-  // pos tracks the midpoint of each segment's hypotenuse edge so the fwd axis
-  // passes through it.  yOff = (leg1+leg2)/2 shifts vertices accordingly.
-  // Even: right-angle at pos-yOff (below axis), hyp face = -Y (bottom).
-  // Odd:  right-angle at pos+yOff (above axis), hyp face = +Y (top).
   function layout3D(joints) {
-    var pos  = [0, 0, 0];
-    var fwd  = [1, 0, 0];
-    // Legs rotated 45° so hyp face is horizontal (perpendicular to Y).
-    var s = Math.SQRT2 / 2;          // 1/sqrt(2)
-    var leg1 = [0,  s,  s];
-    var leg2 = [0,  s, -s];
+    // Single segment at origin for calibration.
+    // Right-angle at (0,0,0), leg1 along +Y, leg2 along +Z, depth along +X.
     var segs = [];
-
-    for (var i = 0; i < 24; i++) {
-      var odd = i & 1;
-      // Offset from right-angle vertex to hyp midpoint = (leg1+leg2)/2
-      var yOff = [(leg1[0]+leg2[0])/2, (leg1[1]+leg2[1])/2, (leg1[2]+leg2[2])/2];
-      var f0, f1, f2;
-
-      if (!odd) {
-        // Even: right-angle below fwd axis
-        f0 = vsub(pos, yOff);
-        f1 = vsub(vadd(pos, leg1), yOff);
-        f2 = vsub(vadd(pos, leg2), yOff);
-      } else {
-        // Odd: right-angle above fwd axis
-        f0 = vadd(pos, yOff);
-        f1 = vsub(vadd(pos, leg2), yOff);
-        f2 = vsub(vadd(pos, leg1), yOff);
-      }
-
-      segs.push({
-        idx: i,
-        f: [f0, f1, f2],
-        b: [vadd(f0, fwd), vadd(f1, fwd), vadd(f2, fwd)],
-      });
-
-      pos = vadd(pos, fwd);
-
-      if (i < joints.length && joints[i] !== 'S') {
-        var hinge = odd ? leg1 : leg2;
-        if (joints[i] === 'R') {
-          var nf = vcross(hinge, fwd);
-          if (!odd) leg1 = vcross(hinge, leg1);
-          else      leg2 = vcross(hinge, leg2);
-          fwd = nf;
-        } else {
-          var nf2 = vcross(fwd, hinge);
-          if (!odd) leg1 = vcross(leg1, hinge);
-          else      leg2 = vcross(leg2, hinge);
-          fwd = nf2;
-        }
-      }
-    }
+    segs.push({
+      idx: 0,
+      f: [[0,0,0], [0,1,0], [0,0,1]],
+      b: [[1,0,0], [1,1,0], [1,0,1]],
+    });
     return segs;
   }
 
