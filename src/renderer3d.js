@@ -67,7 +67,7 @@ var Renderer3D = (function () {
       var mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
       var sprite = new THREE.Sprite(mat);
       sprite.position.set(d.pos[0], d.pos[1], d.pos[2]);
-      sprite.scale.set(0.7, 0.7, 0.7);
+      sprite.scale.set(2.1, 2.1, 2.1);
       sprite.renderOrder = 1000;
       scene.add(sprite);
       return sprite;
