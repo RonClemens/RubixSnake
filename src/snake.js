@@ -73,13 +73,13 @@ var Snake = (function () {
 
   // ── 3D layout ──────────────────────────────────────────────────────────────
   function layout3D(joints) {
-    // Single segment: total -180° around Y from original.
-    // (x,y,z) → (-x, y, -z)
+    // Single segment: total -90° around Y from original.
+    // right-angle at origin, leg1=+Y, leg2=-X, depth=+Z
     var segs = [];
     segs.push({
       idx: 0,
-      f: [[0,0,0], [0,1,0], [0,0,-1]],
-      b: [[-1,0,0], [-1,1,0], [-1,0,-1]],
+      f: [[0,0,0], [0,1,0], [-1,0,0]],
+      b: [[0,0,1], [0,1,1], [-1,0,1]],
     });
     return segs;
   }
