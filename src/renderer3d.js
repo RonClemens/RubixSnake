@@ -56,18 +56,18 @@ var Renderer3D = (function () {
     ];
     axesLabels = labelDefs.map(function (d) {
       var canvas = document.createElement('canvas');
-      canvas.width = 64; canvas.height = 64;
+      canvas.width = 256; canvas.height = 256;
       var ctx = canvas.getContext('2d');
       ctx.fillStyle = d.color;
-      ctx.font = 'bold 48px sans-serif';
+      ctx.font = 'bold 200px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(d.text, 32, 32);
+      ctx.fillText(d.text, 128, 128);
       var tex = new THREE.CanvasTexture(canvas);
-      var mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+      var mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
       var sprite = new THREE.Sprite(mat);
       sprite.position.set(d.pos[0], d.pos[1], d.pos[2]);
-      sprite.scale.set(2.1, 2.1, 2.1);
+      sprite.scale.set(1.5, 1.5, 1.5);
       sprite.renderOrder = 1000;
       scene.add(sprite);
       return sprite;
