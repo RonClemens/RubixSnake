@@ -2,7 +2,7 @@
 // Uses actual vertex positions from Snake.layout3D (no transform matrices).
 
 var Renderer3D = (function () {
-  var scene, camera, renderer, meshes = [], axesHelper = null, animFrame = null;
+  var scene, camera, renderer, meshes = [], axesHelper = null, axesLabels = [], animFrame = null;
   // theta=π/2 → camera in Y-Z plane so the X-extending snake reads horizontally.
   // phi=π/3  → 60° from vertical (30° above horizontal) for a natural elevation.
   var spherical = { theta: Math.PI / 2, phi: Math.PI / 3, r: 15 };
@@ -47,6 +47,31 @@ var Renderer3D = (function () {
     axesHelper.material.depthTest = false;
     axesHelper.renderOrder = 999;
     scene.add(axesHelper);
+
+    // Axis labels
+    var labelDefs = [
+      { text: 'X', pos: [4.4, 0, 0],   color: '#ff4444' },
+      { text: 'Y', pos: [0,   4.4, 0], color: '#44ff44' },
+      { text: 'Z', pos: [0,   0, 4.4], color: '#4488ff' },
+    ];
+    axesLabels = labelDefs.map(function (d) {
+      var canvas = document.createElement('canvas');
+      canvas.width = 64; canvas.height = 64;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = d.color;
+      ctx.font = 'bold 48px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(d.text, 32, 32);
+      var tex = new THREE.CanvasTexture(canvas);
+      var mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+      var sprite = new THREE.Sprite(mat);
+      sprite.position.set(d.pos[0], d.pos[1], d.pos[2]);
+      sprite.scale.set(0.7, 0.7, 0.7);
+      sprite.renderOrder = 1000;
+      scene.add(sprite);
+      return sprite;
+    });
 
     addOrbit(container);
 
@@ -106,7 +131,13 @@ var Renderer3D = (function () {
       var diag = size.length();
       var shortSide = Math.min(size.x, size.y, size.z);
       spherical.r = Math.max(diag * 0.7, shortSide * 6, 3);
-      if (axesHelper) axesHelper.position.copy(orbitCenter);
+      if (axesHelper) {
+        axesHelper.position.copy(orbitCenter);
+        var offsets = [[4.4,0,0],[0,4.4,0],[0,0,4.4]];
+        axesLabels.forEach(function (s, i) {
+          s.position.set(orbitCenter.x + offsets[i][0], orbitCenter.y + offsets[i][1], orbitCenter.z + offsets[i][2]);
+        });
+      }
       updateCamera();
     }
   }
