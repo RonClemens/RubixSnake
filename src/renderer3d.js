@@ -74,7 +74,8 @@ var Renderer3D = (function () {
       return sprite;
     });
 
-    addOrbit(container);
+    container.style.touchAction = 'none';
+    addOrbit(container, renderer.domElement);
 
     new ResizeObserver(function () { resize(container); }).observe(container);
 
@@ -152,7 +153,7 @@ var Renderer3D = (function () {
     camera.lookAt(orbitCenter);
   }
 
-  function addOrbit(el) {
+  function addOrbit(container, canvas) {
     var drag = false, lx = 0, ly = 0;
 
     function onMove(dx, dy) {
@@ -161,35 +162,35 @@ var Renderer3D = (function () {
       updateCamera();
     }
 
-    el.addEventListener('mousedown', function (e) { drag = true; lx = e.clientX; ly = e.clientY; });
-    window.addEventListener('mouseup',  function ()  { drag = false; });
-    el.addEventListener('mousemove', function (e) {
+    canvas.addEventListener('mousedown', function (e) { drag = true; lx = e.clientX; ly = e.clientY; });
+    window.addEventListener('mouseup', function () { drag = false; });
+    canvas.addEventListener('mousemove', function (e) {
       if (!drag) return;
       onMove(e.clientX - lx, e.clientY - ly);
       lx = e.clientX; ly = e.clientY;
     });
 
     var lt = null, lpinch = null;
-    el.addEventListener('touchstart', function (e) {
+    canvas.addEventListener('touchstart', function (e) {
+      e.preventDefault();
       if (e.touches.length === 1) { lt = e.touches[0]; lpinch = null; }
       if (e.touches.length === 2) {
-        e.preventDefault();
         lpinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         lt = null;
       }
     }, { passive: false });
-    el.addEventListener('touchmove', function (e) {
+    canvas.addEventListener('touchmove', function (e) {
+      e.preventDefault();
       if (e.touches.length === 2) {
-        e.preventDefault();
         var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         if (lpinch) { spherical.r = Math.max(1, spherical.r * (lpinch / dist)); updateCamera(); }
         lpinch = dist;
       } else if (e.touches.length === 1 && lt) {
-        e.preventDefault();
         onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY);
         lt = e.touches[0];
       }
     }, { passive: false });
+    canvas.addEventListener('touchend', function () { lt = null; lpinch = null; }, { passive: true });
   }
 
   return { init: init, update: update };
