@@ -43,17 +43,17 @@ var Snake = (function () {
   }
   function clearSegTransforms() { _xforms = {}; }
 
-  // Rotate v around pivot using XYZ Euler (right-hand rule), then translate.
-  function _xfApply(v, xf, px, py, pz) {
+  // Rotate v around world origin (0,0,0) using XYZ Euler (right-hand rule), then translate.
+  function _xfApply(v, xf) {
     var d = Math.PI / 180;
-    var x = v[0]-px, y = v[1]-py, z = v[2]-pz, c, s, t;
+    var x = v[0], y = v[1], z = v[2], c, s, t;
     c = Math.cos(xf.rx*d); s = Math.sin(xf.rx*d);
     t = y*c - z*s; z = y*s + z*c; y = t;
     c = Math.cos(xf.ry*d); s = Math.sin(xf.ry*d);
     t = x*c + z*s; z = -x*s + z*c; x = t;
     c = Math.cos(xf.rz*d); s = Math.sin(xf.rz*d);
     t = x*c - y*s; y = x*s + y*c; x = t;
-    return [x+px+xf.tx, y+py+xf.ty, z+pz+xf.tz];
+    return [x+xf.tx, y+xf.ty, z+xf.tz];
   }
 
   // ── 2D layout ──────────────────────────────────────────────────────────────
@@ -112,11 +112,8 @@ var Snake = (function () {
     segs.forEach(function (seg) {
       var xf = _xforms[seg.idx];
       if (!xf) return;
-      var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
-      all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
-      px/=all.length; py/=all.length; pz/=all.length;
-      seg.f = seg.f.map(function (v) { return _xfApply(v, xf, px, py, pz); });
-      seg.b = seg.b.map(function (v) { return _xfApply(v, xf, px, py, pz); });
+      seg.f = seg.f.map(function (v) { return _xfApply(v, xf); });
+      seg.b = seg.b.map(function (v) { return _xfApply(v, xf); });
     });
     return segs;
   }
