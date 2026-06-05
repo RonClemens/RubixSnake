@@ -3,16 +3,18 @@
 
 var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], axesHelper = null, axesLabels = [], animFrame = null;
-  // theta=π/2 → camera in Y-Z plane so the X-extending snake reads horizontally.
-  // phi=π/3  → 60° from vertical (30° above horizontal) for a natural elevation.
   var spherical = { theta: Math.PI, phi: Math.PI / 2, r: 4 };
   var orbitCenter = new THREE.Vector3();
+
+  // Editor state
+  var edCbs = null;          // { getXf(segIdx), onSelect(segIdx), onTransform(segIdx, xf) }
+  var edMode = 'translate';  // 'translate' | 'rotate'
 
   var PRISM_IDX = [
     0,2,1,   3,4,5,     // front + back triangular caps
     0,1,4,  0,4,3,     // leg1 square face
     0,3,5,  0,5,2,     // leg2 square face
-    1,2,5,  1,5,4,     // hyp face (even=−Y / odd=+Y, no z-fight with FrontSide)
+    1,2,5,  1,5,4,     // hyp face
   ];
 
   function init(container) {
@@ -43,13 +45,11 @@ var Renderer3D = (function () {
     var d2 = new THREE.DirectionalLight(0x8888ff, 0.3);
     d2.position.set(-4, -3, -5); scene.add(d2);
 
-    // X=red, Y=green, Z=blue — always drawn on top, repositioned in update()
     axesHelper = new THREE.AxesHelper(4);
     axesHelper.material.depthTest = false;
     axesHelper.renderOrder = 999;
     scene.add(axesHelper);
 
-    // Axis labels
     var labelDefs = [
       { text: 'X', pos: [4.4, 0, 0],   color: '#ff4444' },
       { text: 'Y', pos: [0,   4.4, 0], color: '#44ff44' },
@@ -93,7 +93,6 @@ var Renderer3D = (function () {
     camera.updateProjectionMatrix();
   }
 
-  // Build/rebuild scene from joint array
   function update(joints) {
     meshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     meshes = [];
@@ -111,24 +110,20 @@ var Renderer3D = (function () {
       var geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(v, 3));
       geo.setIndex(PRISM_IDX);
-      // flatShading computes per-triangle normals so each prism face is
-      // rendered as a crisp flat plane — no rounded-edge artifacts.
       var mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
         color: new THREE.Color(Snake.segColor(seg.idx).h),
         shininess: 60,
         flatShading: true,
       }));
+      mesh.userData.segIdx = seg.idx;
       scene.add(mesh);
       meshes.push(mesh);
     });
 
-    // Fit camera around bounding box
     if (meshes.length) {
       var box = new THREE.Box3();
       meshes.forEach(function (m) { box.expandByObject(m); });
       box.getCenter(orbitCenter);
-      // For elongated snakes use half-diagonal so the cross-section stays visible;
-      // for compact shapes the full diagonal still gives a good framing.
       var size = box.getSize(new THREE.Vector3());
       var diag = size.length();
       var shortSide = Math.min(size.x, size.y, size.z);
@@ -155,25 +150,121 @@ var Renderer3D = (function () {
   function addOrbit(container, canvas) {
     var drag = false, lx = 0, ly = 0;
 
+    // Editor drag state (local to addOrbit so it doesn't bleed)
+    var edDrag = false;
+    var edDragMesh = null;
+    var edDragStartClient = { x: 0, y: 0 };
+    var edDragBaseXf = null;
+    var edDragPlane = new THREE.Plane();
+    var edDragStartWorld = new THREE.Vector3();
+    var edRaycaster = new THREE.Raycaster();
+
+    function snapTo(v, step) { return Math.round(v / step) * step; }
+
+    function ndcFromClient(cx, cy) {
+      var rect = canvas.getBoundingClientRect();
+      return new THREE.Vector2(
+        (cx - rect.left) / rect.width * 2 - 1,
+        -((cy - rect.top) / rect.height) * 2 + 1
+      );
+    }
+
+    function hitMesh(cx, cy) {
+      if (!meshes.length) return null;
+      edRaycaster.setFromCamera(ndcFromClient(cx, cy), camera);
+      var hits = edRaycaster.intersectObjects(meshes);
+      return hits.length > 0 ? hits[0].object : null;
+    }
+
+    function meshCentroid(mesh) {
+      var pos = mesh.geometry.attributes.position;
+      var cx=0, cy=0, cz=0, n=pos.count;
+      for (var i=0; i<n; i++) { cx+=pos.getX(i); cy+=pos.getY(i); cz+=pos.getZ(i); }
+      return new THREE.Vector3(cx/n, cy/n, cz/n);
+    }
+
+    function startEdDrag(cx, cy, mesh) {
+      var xf = edCbs.getXf(mesh.userData.segIdx);
+      edDragBaseXf = { tx:xf.tx||0, ty:xf.ty||0, tz:xf.tz||0,
+                       rx:xf.rx||0, ry:xf.ry||0, rz:xf.rz||0 };
+      edDragStartClient = { x: cx, y: cy };
+      if (edMode === 'translate') {
+        var centroid = meshCentroid(mesh);
+        var normal = new THREE.Vector3();
+        camera.getWorldDirection(normal);
+        edDragPlane.setFromNormalAndCoplanarPoint(normal, centroid);
+        edRaycaster.setFromCamera(ndcFromClient(cx, cy), camera);
+        edRaycaster.ray.intersectPlane(edDragPlane, edDragStartWorld);
+      }
+      edDragMesh = mesh;
+      edDrag = true;
+    }
+
+    function moveEdDrag(cx, cy) {
+      if (!edDrag || !edDragMesh || !edCbs) return;
+      var xf = { tx:edDragBaseXf.tx, ty:edDragBaseXf.ty, tz:edDragBaseXf.tz,
+                 rx:edDragBaseXf.rx, ry:edDragBaseXf.ry, rz:edDragBaseXf.rz };
+      if (edMode === 'translate') {
+        var worldNow = new THREE.Vector3();
+        edRaycaster.setFromCamera(ndcFromClient(cx, cy), camera);
+        if (edRaycaster.ray.intersectPlane(edDragPlane, worldNow)) {
+          xf.tx = snapTo(edDragBaseXf.tx + worldNow.x - edDragStartWorld.x, 0.5);
+          xf.ty = snapTo(edDragBaseXf.ty + worldNow.y - edDragStartWorld.y, 0.5);
+          xf.tz = snapTo(edDragBaseXf.tz + worldNow.z - edDragStartWorld.z, 0.5);
+        }
+      } else {
+        xf.ry = snapTo(edDragBaseXf.ry + (cx - edDragStartClient.x) * 0.5, 45);
+        xf.rx = snapTo(edDragBaseXf.rx + (cy - edDragStartClient.y) * 0.5, 45);
+      }
+      edCbs.onTransform(edDragMesh.userData.segIdx, xf);
+    }
+
+    function endEdDrag() { edDrag = false; edDragMesh = null; }
+
     function onMove(dx, dy) {
       spherical.theta -= dx * 0.008;
       spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.008));
       updateCamera();
     }
 
-    canvas.addEventListener('mousedown', function (e) { drag = true; lx = e.clientX; ly = e.clientY; });
-    window.addEventListener('mouseup', function () { drag = false; });
+    // ── mouse ──
+    canvas.addEventListener('mousedown', function (e) {
+      if (edCbs) {
+        var hit = hitMesh(e.clientX, e.clientY);
+        if (hit) {
+          edCbs.onSelect(hit.userData.segIdx);
+          startEdDrag(e.clientX, e.clientY, hit);
+          return;
+        }
+      }
+      drag = true; lx = e.clientX; ly = e.clientY;
+    });
+    window.addEventListener('mouseup', function () { drag = false; endEdDrag(); });
     canvas.addEventListener('mousemove', function (e) {
+      if (edDrag) { moveEdDrag(e.clientX, e.clientY); return; }
       if (!drag) return;
       onMove(e.clientX - lx, e.clientY - ly);
       lx = e.clientX; ly = e.clientY;
     });
 
+    // ── touch ──
     var lt = null, lpinch = null;
     canvas.addEventListener('touchstart', function (e) {
       e.preventDefault();
-      if (e.touches.length === 1) { lt = e.touches[0]; lpinch = null; }
+      if (e.touches.length === 1) {
+        if (edCbs) {
+          var hit = hitMesh(e.touches[0].clientX, e.touches[0].clientY);
+          if (hit) {
+            edCbs.onSelect(hit.userData.segIdx);
+            startEdDrag(e.touches[0].clientX, e.touches[0].clientY, hit);
+            lt = null; lpinch = null;
+            return;
+          }
+        }
+        lt = e.touches[0]; lpinch = null;
+      }
       if (e.touches.length === 2) {
+        endEdDrag();
         lpinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         lt = null;
       }
@@ -184,13 +275,21 @@ var Renderer3D = (function () {
         var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         if (lpinch) { spherical.r = Math.max(1, spherical.r * (lpinch / dist)); updateCamera(); }
         lpinch = dist;
-      } else if (e.touches.length === 1 && lt) {
-        onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY);
-        lt = e.touches[0];
+      } else if (e.touches.length === 1) {
+        if (edDrag) { moveEdDrag(e.touches[0].clientX, e.touches[0].clientY); }
+        else if (lt) { onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY); lt = e.touches[0]; }
       }
     }, { passive: false });
-    canvas.addEventListener('touchend', function () { lt = null; lpinch = null; }, { passive: true });
+    canvas.addEventListener('touchend', function () {
+      lt = null; lpinch = null; endEdDrag();
+    }, { passive: true });
   }
 
-  return { init: init, update: update };
+  return {
+    init: init,
+    update: update,
+    setEditor: function (mode, cbs) { edMode = mode; edCbs = cbs; },
+    setEdMode: function (mode) { edMode = mode; },
+    clearEditor: function () { edCbs = null; },
+  };
 })();

@@ -23,6 +23,7 @@
   var guideStep   = 0;         // 0=intro, 1–23=joints, 24=done
   var edSeg = 0;               // selected segment in editor
   var edXf  = {};              // per-segment transform overrides { id: {tx,ty,tz,rx,ry,rz} }
+  var edMode3D = 'translate';  // '3D drag mode: translate' | 'rotate'
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
@@ -53,6 +54,7 @@
     document.getElementById('pbar').style.display   = t === 'guide' ? 'block' : 'none';
     // Apply/clear editor transforms so guide & engine always see raw geometry
     Snake.clearSegTransforms();
+    Renderer3D.clearEditor();
     if (t === 'editor') {
       Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
     }
@@ -385,31 +387,43 @@
         'Seg&nbsp;' + i + '</button>';
     }
 
-    function numinp(id, val, step) {
-      return '<input type="number" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '" step="' + step + '" ' +
+    function modeBtn(id, label, mode) {
+      var on = edMode3D === mode;
+      return '<button id="' + id + '" style="flex:1;padding:7px;border-radius:7px;font-size:12px;font-weight:700;' +
+        'background:' + (on ? 'rgba(88,166,255,.15)' : 'rgba(255,255,255,.05)') + ';' +
+        'border:' + (on ? '1.5px solid #58a6ff' : '1px solid #30363d') + ';' +
+        'color:' + (on ? '#58a6ff' : '#8b949e') + '">' + label + '</button>';
+    }
+
+    function numinp(id, val) {
+      return '<input type="text" inputmode="decimal" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '" ' +
         'style="width:80px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#fff;' +
-        'padding:6px 8px;font-size:13px;text-align:center;-moz-appearance:textfield">';
+        'padding:6px 8px;font-size:13px;text-align:center">';
     }
 
     function axrow(axis, col, tid, tval, rid, rval) {
       return '<tr>' +
         '<td style="color:' + col + ';font-weight:700;font-size:13px;padding:4px 10px 4px 0;width:20px">' + axis + '</td>' +
-        '<td style="padding:3px 4px">' + numinp(tid, tval, 0.1) + '</td>' +
-        '<td style="padding:3px 4px">' + numinp(rid, rval, 1) + '</td>' +
+        '<td style="padding:3px 4px">' + numinp(tid, tval) + '</td>' +
+        '<td style="padding:3px 4px">' + numinp(rid, rval) + '</td>' +
       '</tr>';
     }
 
     pg.innerHTML =
       '<div class="card" style="padding:10px">' +
-        '<div class="lbl">3D preview — drag to rotate</div>' +
+        '<div class="lbl">3D — tap segment to select &amp; drag to transform</div>' +
         '<div id="editor-3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
+        '<div style="display:flex;gap:6px;margin-top:8px">' +
+          modeBtn('ed-mode-t', '↔ Translate (snap 0.5)', 'translate') +
+          modeBtn('ed-mode-r', '↻ Rotate (snap 45°)', 'rotate') +
+        '</div>' +
       '</div>' +
       '<div class="card">' +
         '<div class="lbl">Segment</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + segBtns + '</div>' +
       '</div>' +
       '<div class="card">' +
-        '<div class="lbl">Transform — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
+        '<div class="lbl" id="ed-xf-hdr">Transform — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
         '<table style="width:100%;border-collapse:collapse">' +
           '<thead><tr>' +
             '<th></th>' +
@@ -423,10 +437,20 @@
         '<button id="ed-reset" style="margin-top:10px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
       '</div>';
 
+    // Segment selector
     pg.querySelectorAll('[data-edid]').forEach(function (btn) {
       btn.onclick = function () { edSeg = +this.getAttribute('data-edid'); renderEditor(); };
     });
 
+    // Mode toggle buttons
+    document.getElementById('ed-mode-t').onclick = function () {
+      edMode3D = 'translate'; Renderer3D.setEdMode('translate'); renderEditor();
+    };
+    document.getElementById('ed-mode-r').onclick = function () {
+      edMode3D = 'rotate'; Renderer3D.setEdMode('rotate'); renderEditor();
+    };
+
+    // Manual inputs
     function applyXf() {
       function v(id) { var n = parseFloat(document.getElementById(id).value); return isNaN(n) ? 0 : n; }
       var x = { tx:v('ed-tx'), ty:v('ed-ty'), tz:v('ed-tz'), rx:v('ed-rx'), ry:v('ed-ry'), rz:v('ed-rz') };
@@ -435,7 +459,6 @@
       var v3 = document.getElementById('editor-3d');
       if (v3) Renderer3D.update(joints);
     }
-
     ['ed-tx','ed-ty','ed-tz','ed-rx','ed-ry','ed-rz'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.oninput = applyXf;
@@ -448,9 +471,47 @@
       renderEditor();
     };
 
+    // 3D init + wire editor callbacks
     setTimeout(function () {
       var v3 = document.getElementById('editor-3d');
-      if (v3) { Renderer3D.init(v3); Renderer3D.update(joints); }
+      if (!v3) return;
+      Renderer3D.init(v3);
+      Renderer3D.update(joints);
+      Renderer3D.setEditor(edMode3D, {
+        getXf: function (idx) { return edXf[idx] || { tx:0,ty:0,tz:0,rx:0,ry:0,rz:0 }; },
+        onSelect: function (idx) {
+          if (idx === edSeg) return;
+          edSeg = idx;
+          // Update segment buttons
+          document.querySelectorAll('[data-edid]').forEach(function (b) {
+            var bi = +b.getAttribute('data-edid');
+            var sc2 = Snake.segColor(bi).h;
+            b.style.background = bi === idx ? sc2 + '28' : 'rgba(255,255,255,.05)';
+            b.style.border = bi === idx ? '1.5px solid ' + sc2 : '1px solid #30363d';
+            b.style.fontWeight = bi === idx ? '700' : '400';
+          });
+          var hdr = document.getElementById('ed-xf-hdr');
+          if (hdr) hdr.textContent = 'Transform — Seg ' + idx + ' (' + Snake.segColor(idx).n + ')';
+          var rb = document.getElementById('ed-reset');
+          if (rb) rb.textContent = 'Reset Seg ' + idx;
+          var xf2 = edXf[idx] || { tx:0,ty:0,tz:0,rx:0,ry:0,rz:0 };
+          ['tx','ty','tz','rx','ry','rz'].forEach(function (k) {
+            var el = document.getElementById('ed-' + k);
+            if (el) el.value = Math.round(xf2[k] * 1000) / 1000;
+          });
+        },
+        onTransform: function (idx, xf2) {
+          edXf[idx] = xf2;
+          Snake.setSegTransform(idx, xf2);
+          if (idx === edSeg) {
+            ['tx','ty','tz','rx','ry','rz'].forEach(function (k) {
+              var el = document.getElementById('ed-' + k);
+              if (el && document.activeElement !== el) el.value = Math.round(xf2[k] * 1000) / 1000;
+            });
+          }
+          Renderer3D.update(joints);
+        },
+      });
     }, 20);
   }
 
