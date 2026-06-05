@@ -73,18 +73,19 @@ var Snake = (function () {
 
   // ── 3D layout ──────────────────────────────────────────────────────────────
   function layout3D(joints) {
+    var L = Math.SQRT1_2; // 1/√2 ≈ 0.707; legs = 1, hyp at Y=0
     var segs = [];
-    // Seg 0 (even): right-angle at YZ lower-left (-0.5,-0.5). X from -0.5 to 0.5.
+    // Seg 0 (even): hyp face at Y=0, right-angle at Y=-L (bottom)
     segs.push({
       idx: 0,
-      f: [[-0.5,-0.5,-0.5], [-0.5, 0.5,-0.5], [-0.5,-0.5, 0.5]],
-      b: [[ 0.5,-0.5,-0.5], [ 0.5, 0.5,-0.5], [ 0.5,-0.5, 0.5]],
+      f: [[-0.5, -L,  0], [-0.5,  0, -L], [-0.5,  0,  L]],
+      b: [[ 0.5, -L,  0], [ 0.5,  0, -L], [ 0.5,  0,  L]],
     });
-    // Seg 1 (odd): right-angle at YZ upper-right (+0.5,+0.5). X from 0.5 to 1.5.
+    // Seg 1 (odd): hyp face at Y=0, right-angle at Y=+L (top)
     segs.push({
       idx: 1,
-      f: [[ 0.5, 0.5, 0.5], [ 0.5,-0.5, 0.5], [ 0.5, 0.5,-0.5]],
-      b: [[ 1.5, 0.5, 0.5], [ 1.5,-0.5, 0.5], [ 1.5, 0.5,-0.5]],
+      f: [[ 0.5,  L,  0], [ 0.5,  0,  L], [ 0.5,  0, -L]],
+      b: [[ 1.5,  L,  0], [ 1.5,  0,  L], [ 1.5,  0, -L]],
     });
     return segs;
   }
