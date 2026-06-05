@@ -19,8 +19,10 @@
   }
 
   // ── state ──────────────────────────────────────────────────────────────────
-  var activeTab   = 'guide';   // 'guide' | 'engine'
+  var activeTab   = 'guide';   // 'guide' | 'engine' | 'editor'
   var guideStep   = 0;         // 0=intro, 1–23=joints, 24=done
+  var edSeg = 0;               // selected segment in editor
+  var edXf  = {};              // per-segment transform overrides { id: {tx,ty,tz,rx,ry,rz} }
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
@@ -35,6 +37,7 @@
 
     document.getElementById('tab-guide').onclick  = function () { switchTab('guide'); };
     document.getElementById('tab-engine').onclick = function () { switchTab('engine'); };
+    document.getElementById('tab-editor').onclick = function () { switchTab('editor'); };
 
     // load cube by default
     activeShape = Shapes.getById('cube');
@@ -45,8 +48,14 @@
     activeTab = t;
     document.getElementById('tab-guide').className  = 'tab' + (t === 'guide'  ? ' active' : '');
     document.getElementById('tab-engine').className = 'tab' + (t === 'engine' ? ' active' : '');
+    document.getElementById('tab-editor').className = 'tab' + (t === 'editor' ? ' active' : '');
     document.getElementById('navrow').style.display = t === 'guide' && guideStep >= 1 && guideStep <= 23 ? 'flex' : 'none';
     document.getElementById('pbar').style.display   = t === 'guide' ? 'block' : 'none';
+    // Apply/clear editor transforms so guide & engine always see raw geometry
+    Snake.clearSegTransforms();
+    if (t === 'editor') {
+      Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
+    }
     render();
   }
 
@@ -162,7 +171,8 @@
   // ── RENDER ─────────────────────────────────────────────────────────────────
   function render() {
     if (activeTab === 'guide') renderGuide();
-    else renderEngine();
+    else if (activeTab === 'engine') renderEngine();
+    else renderEditor();
   }
 
   // ── GUIDE TAB ─────────────────────────────────────────────────────────────
@@ -355,6 +365,99 @@
       var v3 = document.getElementById('view3d');
       if (v3) { Renderer3D.init(v3); Renderer3D.update(startJoints); }
     }, 50);
+  }
+
+  // ── EDITOR TAB ────────────────────────────────────────────────────────────
+  function renderEditor() {
+    var pg = document.getElementById('pg');
+    var joints = activeShape ? activeShape.joints : [];
+    var numSegs = Snake.layout3D(joints).length;
+    var xf = edXf[edSeg] || { tx:0, ty:0, tz:0, rx:0, ry:0, rz:0 };
+
+    var segBtns = '';
+    for (var i = 0; i < numSegs; i++) {
+      var sc = Snake.segColor(i).h;
+      var active = i === edSeg;
+      segBtns += '<button data-edid="' + i + '" style="display:flex;align-items:center;gap:6px;padding:7px 11px;border-radius:8px;' +
+        'background:' + (active ? sc + '28' : 'rgba(255,255,255,.05)') + ';' +
+        'border:' + (active ? '1.5px solid ' + sc : '1px solid #30363d') + ';color:#fff;font-size:12px;font-weight:' + (active ? '700' : '400') + '">' +
+        '<span style="width:11px;height:11px;border-radius:3px;background:' + sc + ';display:inline-block;flex-shrink:0"></span>' +
+        'Seg&nbsp;' + i + '</button>';
+    }
+
+    function numinp(id, val, step) {
+      return '<input type="number" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '" step="' + step + '" ' +
+        'style="width:80px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#fff;' +
+        'padding:6px 8px;font-size:13px;text-align:center;-moz-appearance:textfield">';
+    }
+
+    function axrow(axis, col, tid, tval, rid, rval) {
+      return '<tr>' +
+        '<td style="color:' + col + ';font-weight:700;font-size:13px;padding:4px 10px 4px 0;width:20px">' + axis + '</td>' +
+        '<td style="padding:3px 4px">' + numinp(tid, tval, 0.1) + '</td>' +
+        '<td style="padding:3px 4px">' + numinp(rid, rval, 1) + '</td>' +
+      '</tr>';
+    }
+
+    pg.innerHTML =
+      '<div class="card" style="padding:10px">' +
+        '<div class="lbl">3D preview — drag to rotate</div>' +
+        '<div id="editor-3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="lbl">Segment</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + segBtns + '</div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="lbl">Transform — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
+        '<table style="width:100%;border-collapse:collapse">' +
+          '<thead><tr>' +
+            '<th></th>' +
+            '<th style="text-align:center;font-size:11px;color:#58a6ff;font-weight:700;padding:0 4px 8px">Translate (×s)</th>' +
+            '<th style="text-align:center;font-size:11px;color:#f0883e;font-weight:700;padding:0 4px 8px">Rotate (° RHR)</th>' +
+          '</tr></thead><tbody>' +
+          axrow('X', '#ff4444', 'ed-tx', xf.tx, 'ed-rx', xf.rx) +
+          axrow('Y', '#44ff44', 'ed-ty', xf.ty, 'ed-ry', xf.ry) +
+          axrow('Z', '#4488ff', 'ed-tz', xf.tz, 'ed-rz', xf.rz) +
+        '</tbody></table>' +
+        '<button id="ed-reset" style="margin-top:10px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
+      '</div>';
+
+    pg.querySelectorAll('[data-edid]').forEach(function (btn) {
+      btn.onclick = function () { edSeg = +this.getAttribute('data-edid'); renderEditor(); };
+    });
+
+    function applyXf() {
+      var x = {
+        tx: +document.getElementById('ed-tx').value || 0,
+        ty: +document.getElementById('ed-ty').value || 0,
+        tz: +document.getElementById('ed-tz').value || 0,
+        rx: +document.getElementById('ed-rx').value || 0,
+        ry: +document.getElementById('ed-ry').value || 0,
+        rz: +document.getElementById('ed-rz').value || 0,
+      };
+      edXf[edSeg] = x;
+      Snake.setSegTransform(edSeg, x);
+      var v3 = document.getElementById('editor-3d');
+      if (v3) Renderer3D.update(joints);
+    }
+
+    ['ed-tx','ed-ty','ed-tz','ed-rx','ed-ry','ed-rz'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.oninput = applyXf;
+    });
+
+    document.getElementById('ed-reset').onclick = function () {
+      delete edXf[edSeg];
+      Snake.clearSegTransforms();
+      Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
+      renderEditor();
+    };
+
+    setTimeout(function () {
+      var v3 = document.getElementById('editor-3d');
+      if (v3) { Renderer3D.init(v3); Renderer3D.update(joints); }
+    }, 20);
   }
 
   // ── boot ──────────────────────────────────────────────────────────────────

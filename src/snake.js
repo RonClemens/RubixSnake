@@ -34,6 +34,28 @@ var Snake = (function () {
     ];
   }
 
+  // ── segment transform overrides (used by the editor tab) ──────────────────
+  var _xforms = {};
+
+  function setSegTransform(id, xf) {
+    _xforms[id] = { tx: xf.tx||0, ty: xf.ty||0, tz: xf.tz||0,
+                    rx: xf.rx||0, ry: xf.ry||0, rz: xf.rz||0 };
+  }
+  function clearSegTransforms() { _xforms = {}; }
+
+  // Rotate v around pivot using XYZ Euler (right-hand rule), then translate.
+  function _xfApply(v, xf, px, py, pz) {
+    var d = Math.PI / 180;
+    var x = v[0]-px, y = v[1]-py, z = v[2]-pz, c, s, t;
+    c = Math.cos(xf.rx*d); s = Math.sin(xf.rx*d);
+    t = y*c - z*s; z = y*s + z*c; y = t;
+    c = Math.cos(xf.ry*d); s = Math.sin(xf.ry*d);
+    t = x*c + z*s; z = -x*s + z*c; x = t;
+    c = Math.cos(xf.rz*d); s = Math.sin(xf.rz*d);
+    t = x*c - y*s; y = x*s + y*c; x = t;
+    return [x+px+xf.tx, y+py+xf.ty, z+pz+xf.tz];
+  }
+
   // ── 2D layout ──────────────────────────────────────────────────────────────
   // Side-view zigzag diagram. Returns {segs, px, py, fx, fy} for canvas drawing.
   function layout2D(joints, count) {
@@ -87,6 +109,15 @@ var Snake = (function () {
       f: [[ 0.5, 0.5+L,  0], [ 0.5,  0.5,  L], [ 0.5,  0.5, -L]],
       b: [[ 1.5, 0.5+L,  0], [ 1.5,  0.5,  L], [ 1.5,  0.5, -L]],
     });
+    segs.forEach(function (seg) {
+      var xf = _xforms[seg.idx];
+      if (!xf) return;
+      var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
+      all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
+      px/=all.length; py/=all.length; pz/=all.length;
+      seg.f = seg.f.map(function (v) { return _xfApply(v, xf, px, py, pz); });
+      seg.b = seg.b.map(function (v) { return _xfApply(v, xf, px, py, pz); });
+    });
     return segs;
   }
 
@@ -95,5 +126,7 @@ var Snake = (function () {
     segColor: segColor,
     layout2D: layout2D,
     layout3D: layout3D,
+    setSegTransform: setSegTransform,
+    clearSegTransforms: clearSegTransforms,
   };
 })();
