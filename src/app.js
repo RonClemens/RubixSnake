@@ -428,14 +428,8 @@
     });
 
     function applyXf() {
-      var x = {
-        tx: +document.getElementById('ed-tx').value || 0,
-        ty: +document.getElementById('ed-ty').value || 0,
-        tz: +document.getElementById('ed-tz').value || 0,
-        rx: +document.getElementById('ed-rx').value || 0,
-        ry: +document.getElementById('ed-ry').value || 0,
-        rz: +document.getElementById('ed-rz').value || 0,
-      };
+      function v(id) { var n = parseFloat(document.getElementById(id).value); return isNaN(n) ? 0 : n; }
+      var x = { tx:v('ed-tx'), ty:v('ed-ty'), tz:v('ed-tz'), rx:v('ed-rx'), ry:v('ed-ry'), rz:v('ed-rz') };
       edXf[edSeg] = x;
       Snake.setSegTransform(edSeg, x);
       var v3 = document.getElementById('editor-3d');
