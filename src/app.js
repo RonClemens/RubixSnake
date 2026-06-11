@@ -396,9 +396,12 @@
     }
 
     function numinp(id, val) {
-      return '<input type="text" inputmode="decimal" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '" ' +
-        'style="width:80px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#fff;' +
-        'padding:6px 8px;font-size:13px;text-align:center">';
+      return '<div style="display:flex;gap:3px;align-items:center;justify-content:center">' +
+        '<button data-neg="' + id + '" style="width:26px;height:30px;flex-shrink:0;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:14px;font-weight:700">±</button>' +
+        '<input type="text" inputmode="decimal" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '" ' +
+        'style="width:60px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#fff;' +
+        'padding:6px 4px;font-size:13px;text-align:center">' +
+        '</div>';
     }
 
     function axrow(axis, col, tid, tval, rid, rval) {
@@ -462,6 +465,17 @@
     ['ed-tx','ed-ty','ed-tz','ed-rx','ed-ry','ed-rz'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.oninput = applyXf;
+    });
+
+    // Sign-toggle buttons (mobile decimal keypads have no minus key)
+    pg.querySelectorAll('[data-neg]').forEach(function (btn) {
+      btn.onclick = function () {
+        var el = document.getElementById(this.getAttribute('data-neg'));
+        var n = parseFloat(el.value);
+        if (isNaN(n)) n = 0;
+        el.value = -n;
+        applyXf();
+      };
     });
 
     document.getElementById('ed-reset').onclick = function () {
