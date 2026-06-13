@@ -158,16 +158,15 @@ var Snake = (function () {
   function layout3D(joints) {
     var L = Math.SQRT1_2; // 1/√2 ≈ 0.707; legs = 1, hyp at Y=0.5
     var segs = [];
-    // Seg 0 (even): triangular end caps normal to the global X-axis. Each
-    // piece is half of a unit cube (cut along its hypotenuse face); the
-    // X-axis runs through the center of that cube's cross-section — i.e.
-    // through the midpoint of the hypotenuse (Y=0, Z=±L) and the bounding
-    // square's center (right-angle corner at Y=-L, Z=0). This keeps every
-    // segment's cube centered on the X-axis for a straight chain.
+    // Seg 0 (even): triangular end caps normal to the global X-axis. Side 1
+    // (leg face 0-1) and Side 2 (leg face 0-2) meet at the right-angle edge
+    // (Y=-L/2, Z=0); the X-axis runs through the point midway between the
+    // midpoints of Side 1 and Side 2 — i.e. Y=0, Z=0 — a line parallel to
+    // Side 3, the hypotenuse panel (Y=L/2, Z=±L).
     segs.push({
       idx: 0,
-      f: [[-0.5, -L,  0], [-0.5,  0, -L], [-0.5,  0,  L]],
-      b: [[ 0.5, -L,  0], [ 0.5,  0, -L], [ 0.5,  0,  L]],
+      f: [[-0.5, -L/2,  0], [-0.5,  L/2, -L], [-0.5,  L/2,  L]],
+      b: [[ 0.5, -L/2,  0], [ 0.5,  L/2, -L], [ 0.5,  L/2,  L]],
     });
 
     for (var i = 1; i <= joints.length; i++) {
