@@ -189,6 +189,12 @@ var Snake = (function () {
         b = b.map(function (v) { return _rotateAround(v, p, dir, angle); });
       }
 
+      // Seg 1: extra +90° twist around the joint's Y-axis to align with Seg 0.
+      if (i === 1) {
+        f = f.map(function (v) { return _rotateAround(v, p, AXIS_VEC.y, Math.PI / 2); });
+        b = b.map(function (v) { return _rotateAround(v, p, AXIS_VEC.y, Math.PI / 2); });
+      }
+
       segs.push({ idx: i, f: f, b: b });
     }
 
