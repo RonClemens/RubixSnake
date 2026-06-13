@@ -13,6 +13,12 @@
 
   function r3(v) { return Math.round(v * 1000) / 1000; }
 
+  // Seg 0's local X-axis is locked to the global X-axis: only tx/rx are free.
+  function constrainXf(segIdx, xf) {
+    if (segIdx === 0) return { tx: xf.tx||0, ty: 0, tz: 0, rx: xf.rx||0, ry: 0, rz: 0 };
+    return xf;
+  }
+
   function dirtxt(t, jid) {
     if (t === 'S') return 'Continue straight — no fold needed';
     var p = pl(jid);
@@ -399,20 +405,21 @@
         'color:' + (on ? '#58a6ff' : '#8b949e') + '">' + label + '</button>';
     }
 
-    function numinp(id, val) {
-      return '<div style="display:flex;gap:3px;align-items:center;justify-content:center">' +
-        '<button data-neg="' + id + '" style="width:26px;height:30px;flex-shrink:0;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:14px;font-weight:700">±</button>' +
-        '<input type="text" inputmode="decimal" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '" ' +
+    function numinp(id, val, locked) {
+      var dis = locked ? ' disabled' : '';
+      return '<div style="display:flex;gap:3px;align-items:center;justify-content:center' + (locked ? ';opacity:.35' : '') + '">' +
+        '<button data-neg="' + id + '"' + dis + ' style="width:26px;height:30px;flex-shrink:0;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:14px;font-weight:700">±</button>' +
+        '<input type="text" inputmode="decimal" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '"' + dis + ' ' +
         'style="width:60px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#fff;' +
         'padding:6px 4px;font-size:13px;text-align:center">' +
         '</div>';
     }
 
-    function axrow(axis, col, tid, tval, rid, rval) {
+    function axrow(axis, col, tid, tval, rid, rval, locked) {
       return '<tr>' +
         '<td style="color:' + col + ';font-weight:700;font-size:13px;padding:4px 10px 4px 0;width:20px">' + axis + '</td>' +
-        '<td style="padding:3px 4px">' + numinp(tid, tval) + '</td>' +
-        '<td style="padding:3px 4px">' + numinp(rid, rval) + '</td>' +
+        '<td style="padding:3px 4px">' + numinp(tid, tval, locked) + '</td>' +
+        '<td style="padding:3px 4px">' + numinp(rid, rval, locked) + '</td>' +
       '</tr>';
     }
 
@@ -445,15 +452,16 @@
       '</div>' +
       '<div class="card">' +
         '<div class="lbl" id="ed-xf-hdr">Transform — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
+        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local X-axis is locked to the global X-axis — only X translate/rotate are editable.</p>' +
         '<table style="width:100%;border-collapse:collapse">' +
           '<thead><tr>' +
             '<th></th>' +
             '<th style="text-align:center;font-size:11px;color:#58a6ff;font-weight:700;padding:0 4px 8px">Translate (×s)</th>' +
             '<th style="text-align:center;font-size:11px;color:#f0883e;font-weight:700;padding:0 4px 8px">Rotate (° RHR)</th>' +
           '</tr></thead><tbody>' +
-          axrow('X', '#ff4444', 'ed-tx', xf.tx, 'ed-rx', xf.rx) +
-          axrow('Y', '#44ff44', 'ed-ty', xf.ty, 'ed-ry', xf.ry) +
-          axrow('Z', '#4488ff', 'ed-tz', xf.tz, 'ed-rz', xf.rz) +
+          axrow('X', '#ff4444', 'ed-tx', xf.tx, 'ed-rx', xf.rx, false) +
+          axrow('Y', '#44ff44', 'ed-ty', xf.ty, 'ed-ry', xf.ry, edSeg === 0) +
+          axrow('Z', '#4488ff', 'ed-tz', xf.tz, 'ed-rz', xf.rz, edSeg === 0) +
         '</tbody></table>' +
         '<button id="ed-reset" style="margin-top:10px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
       '</div>' +
@@ -497,7 +505,7 @@
     // Manual inputs
     function applyXf() {
       function v(id) { var n = parseFloat(document.getElementById(id).value); return isNaN(n) ? 0 : n; }
-      var x = { tx:v('ed-tx'), ty:v('ed-ty'), tz:v('ed-tz'), rx:v('ed-rx'), ry:v('ed-ry'), rz:v('ed-rz') };
+      var x = constrainXf(edSeg, { tx:v('ed-tx'), ty:v('ed-ty'), tz:v('ed-tz'), rx:v('ed-rx'), ry:v('ed-ry'), rz:v('ed-rz') });
       edXf[edSeg] = x;
       Snake.setSegTransform(edSeg, x);
       var v3 = document.getElementById('editor-3d');
@@ -559,8 +567,20 @@
             var el = document.getElementById('ed-' + k);
             if (el) el.value = Math.round(xf2[k] * 1000) / 1000;
           });
+          // Toggle Y/Z lock for seg 0
+          var note = document.getElementById('ed-lock-note');
+          if (note) note.style.display = idx === 0 ? 'block' : 'none';
+          ['ty','tz','ry','rz'].forEach(function (k) {
+            var el = document.getElementById('ed-' + k);
+            var negBtn = document.querySelector('[data-neg="ed-' + k + '"]');
+            var wrap = el && el.parentElement;
+            if (el) el.disabled = idx === 0;
+            if (negBtn) negBtn.disabled = idx === 0;
+            if (wrap) wrap.style.opacity = idx === 0 ? '.35' : '';
+          });
         },
         onTransform: function (idx, xf2) {
+          xf2 = constrainXf(idx, xf2);
           edXf[idx] = xf2;
           Snake.setSegTransform(idx, xf2);
           if (idx === edSeg) {
