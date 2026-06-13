@@ -189,13 +189,23 @@ var Snake = (function () {
         b = b.map(function (v) { return _rotateAround(v, p, dir, angle); });
       }
 
-      // Seg 1: an "S" joint keeps Seg 1 coplanar with Seg 0 — its reflected
-      // cross-section already completes Seg 0's unit square, but lands one
-      // depth-unit behind; shift it forward by Seg 0's depth (Z) so both
-      // segments share the same Z-range, tiling like the real snake's "S".
+      // Seg 1: an "S" joint shares Seg 0's Side 2 (leg face 0-2), not the
+      // hypotenuse. Point-reflect through the midpoint of that shared edge
+      // (in X,Y; same Z range as Seg 0), so the hypotenuses alternate
+      // between an upper and lower "rail" as more straight segments follow.
       if (i === 1) {
-        f = f.map(function (v) { return [v[0], v[1], v[2] + 1]; });
-        b = b.map(function (v) { return [v[0], v[1], v[2] + 1]; });
+        var mx = (prev.f[0][0] + prev.f[2][0]) / 2;
+        var my = (prev.f[0][1] + prev.f[2][1]) / 2;
+        f = [
+          [prev.f[2][0], prev.f[2][1], prev.f[0][2]],
+          [2*mx - prev.f[1][0], 2*my - prev.f[1][1], prev.f[0][2]],
+          [prev.f[0][0], prev.f[0][1], prev.f[0][2]],
+        ];
+        b = [
+          [prev.b[2][0], prev.b[2][1], prev.b[0][2]],
+          [2*mx - prev.b[1][0], 2*my - prev.b[1][1], prev.b[0][2]],
+          [prev.b[0][0], prev.b[0][1], prev.b[0][2]],
+        ];
       }
 
       segs.push({ idx: i, f: f, b: b });
