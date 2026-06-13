@@ -189,6 +189,15 @@ var Snake = (function () {
         b = b.map(function (v) { return _rotateAround(v, p, dir, angle); });
       }
 
+      // Seg 1: an "S" joint keeps Seg 1 coplanar with Seg 0 — its reflected
+      // cross-section already completes Seg 0's unit square, but lands one
+      // depth-unit behind; shift it forward by Seg 0's depth (Z) so both
+      // segments share the same Z-range, tiling like the real snake's "S".
+      if (i === 1) {
+        f = f.map(function (v) { return [v[0], v[1], v[2] + 1]; });
+        b = b.map(function (v) { return [v[0], v[1], v[2] + 1]; });
+      }
+
       segs.push({ idx: i, f: f, b: b });
     }
 
