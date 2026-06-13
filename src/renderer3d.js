@@ -10,6 +10,12 @@ var Renderer3D = (function () {
   var edCbs = null;          // { getXf(segIdx), onSelect(segIdx), onTransform(segIdx, xf) }
   var edMode = 'translate';  // 'translate' | 'rotate'
 
+  // Joint-axis overlay: { segIdx: { a1: 'x'|'y'|'z', a2: 'x'|'y'|'z' } }
+  var axisOverlay = null;
+  var axisMeshes = [];
+  var AXIS_DIR = { x: [1,0,0], y: [0,1,0], z: [0,0,1] };
+  var AXIS_COL = { a1: 0xffff00, a2: 0xff00ff };
+
   var PRISM_IDX = [
     0,2,1,   3,4,5,     // front + back triangular caps
     0,1,4,  0,4,3,     // leg1 square face
@@ -96,6 +102,8 @@ var Renderer3D = (function () {
   function update(joints) {
     meshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     meshes = [];
+    axisMeshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    axisMeshes = [];
 
     Snake.layout3D(joints).forEach(function (seg) {
       var f = seg.f, b = seg.b;
@@ -118,6 +126,32 @@ var Renderer3D = (function () {
       mesh.userData.segIdx = seg.idx;
       scene.add(mesh);
       meshes.push(mesh);
+
+      if (axisOverlay && axisOverlay[seg.idx]) {
+        var cfg = axisOverlay[seg.idx];
+        var cents = Snake.legFaceCentroids(seg);
+        ['a1', 'a2'].forEach(function (key, i) {
+          var dir = AXIS_DIR[cfg[key]] || AXIS_DIR.x;
+          var c = cents[i];
+          var len = 0.8;
+          var pts = [
+            new THREE.Vector3(c[0] - dir[0]*len/2, c[1] - dir[1]*len/2, c[2] - dir[2]*len/2),
+            new THREE.Vector3(c[0] + dir[0]*len/2, c[1] + dir[1]*len/2, c[2] + dir[2]*len/2),
+          ];
+          var lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+          var line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: AXIS_COL[key] }));
+          line.renderOrder = 998;
+          scene.add(line);
+          axisMeshes.push(line);
+
+          var sphGeo = new THREE.SphereGeometry(0.05, 12, 12);
+          var sphere = new THREE.Mesh(sphGeo, new THREE.MeshBasicMaterial({ color: AXIS_COL[key] }));
+          sphere.position.set(c[0], c[1], c[2]);
+          sphere.renderOrder = 998;
+          scene.add(sphere);
+          axisMeshes.push(sphere);
+        });
+      }
     });
 
     if (meshes.length) {
@@ -291,5 +325,7 @@ var Renderer3D = (function () {
     setEditor: function (mode, cbs) { edMode = mode; edCbs = cbs; },
     setEdMode: function (mode) { edMode = mode; },
     clearEditor: function () { edCbs = null; },
+    setAxisOverlay: function (cfg) { axisOverlay = cfg; },
+    clearAxisOverlay: function () { axisOverlay = null; },
   };
 })();

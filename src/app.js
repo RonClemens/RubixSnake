@@ -11,6 +11,8 @@
 
   function pl(jid) { return jid % 2 === 1 ? 'vertical' : 'horizontal'; }
 
+  function r3(v) { return Math.round(v * 1000) / 1000; }
+
   function dirtxt(t, jid) {
     if (t === 'S') return 'Continue straight — no fold needed';
     var p = pl(jid);
@@ -23,6 +25,7 @@
   var guideStep   = 0;         // 0=intro, 1–23=joints, 24=done
   var edSeg = 0;               // selected segment in editor
   var edXf  = {};              // per-segment transform overrides { id: {tx,ty,tz,rx,ry,rz} }
+  var edAxes = {};             // per-segment joint axis directions { id: {a1:'x'|'y'|'z', a2:'x'|'y'|'z'} }
   var edMode3D = 'translate';  // '3D drag mode: translate' | 'rotate'
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
@@ -55,6 +58,7 @@
     // Apply/clear editor transforms so guide & engine always see raw geometry
     Snake.clearSegTransforms();
     Renderer3D.clearEditor();
+    Renderer3D.clearAxisOverlay();
     if (t === 'editor') {
       Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
     }
@@ -412,6 +416,20 @@
       '</tr>';
     }
 
+    function axisToggle(key, val) {
+      return ['x','y','z'].map(function (ax) {
+        var on = val === ax;
+        return '<button data-axis="' + key + '" data-val="' + ax + '" style="flex:1;padding:6px;border-radius:6px;font-size:12px;font-weight:700;' +
+          'background:' + (on ? 'rgba(88,166,255,.15)' : 'rgba(255,255,255,.05)') + ';' +
+          'border:' + (on ? '1.5px solid #58a6ff' : '1px solid #30363d') + ';' +
+          'color:' + (on ? '#58a6ff' : '#8b949e') + '">' + ax.toUpperCase() + '</button>';
+      }).join('');
+    }
+
+    var axCfg = edAxes[edSeg] || { a1: 'x', a2: 'x' };
+    var segGeom = Snake.layout3D(joints)[edSeg];
+    var legCentroids = Snake.legFaceCentroids(segGeom);
+
     pg.innerHTML =
       '<div class="card" style="padding:10px">' +
         '<div class="lbl">3D — tap segment to select &amp; drag to transform</div>' +
@@ -438,11 +456,34 @@
           axrow('Z', '#4488ff', 'ed-tz', xf.tz, 'ed-rz', xf.rz) +
         '</tbody></table>' +
         '<button id="ed-reset" style="margin-top:10px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="lbl">Joint Axes — Seg ' + edSeg + '</div>' +
+        '<p style="font-size:11px;color:#6e7681;margin-bottom:8px">Each axis passes through a right-angle face centroid, running parallel to the chosen axis. For segments after the first, directions will refer to the previous segment\'s local axes once chaining is in place.</p>' +
+        '<div style="margin-bottom:10px">' +
+          '<div style="font-size:11px;color:#ffff00;font-weight:700;margin-bottom:4px">Axis 1 — centroid (' + legCentroids[0].map(r3).join(', ') + ')</div>' +
+          '<div style="display:flex;gap:4px">' + axisToggle('a1', axCfg.a1) + '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:11px;color:#ff00ff;font-weight:700;margin-bottom:4px">Axis 2 — centroid (' + legCentroids[1].map(r3).join(', ') + ')</div>' +
+          '<div style="display:flex;gap:4px">' + axisToggle('a2', axCfg.a2) + '</div>' +
+        '</div>' +
       '</div>';
 
     // Segment selector
     pg.querySelectorAll('[data-edid]').forEach(function (btn) {
       btn.onclick = function () { edSeg = +this.getAttribute('data-edid'); renderEditor(); };
+    });
+
+    // Joint axis direction toggles
+    pg.querySelectorAll('[data-axis]').forEach(function (btn) {
+      btn.onclick = function () {
+        var key = this.getAttribute('data-axis');
+        var val = this.getAttribute('data-val');
+        if (!edAxes[edSeg]) edAxes[edSeg] = { a1: 'x', a2: 'x' };
+        edAxes[edSeg][key] = val;
+        renderEditor();
+      };
     });
 
     // Mode toggle buttons
@@ -485,11 +526,16 @@
       renderEditor();
     };
 
+    // Build full axis overlay config (defaults for segments not yet customized)
+    var fullAxes = {};
+    for (var ai = 0; ai < numSegs; ai++) fullAxes[ai] = edAxes[ai] || { a1: 'x', a2: 'x' };
+
     // 3D init + wire editor callbacks
     setTimeout(function () {
       var v3 = document.getElementById('editor-3d');
       if (!v3) return;
       Renderer3D.init(v3);
+      Renderer3D.setAxisOverlay(fullAxes);
       Renderer3D.update(joints);
       Renderer3D.setEditor(edMode3D, {
         getXf: function (idx) { return edXf[idx] || { tx:0,ty:0,tz:0,rx:0,ry:0,rz:0 }; },

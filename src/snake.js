@@ -121,6 +121,26 @@ var Snake = (function () {
     return segs;
   }
 
+  // ── joint axis helpers ─────────────────────────────────────────────────────
+  // Each segment's vertex 0 is the right-angle corner of its triangular cross-
+  // section. The two "right-angle side" (leg) faces are 0-1 and 0-2, extruded
+  // front (f) to back (b). Returns the centroid of each leg face, in order
+  // [face 0-1 centroid, face 0-2 centroid].
+  function legFaceCentroids(seg) {
+    var f = seg.f, b = seg.b;
+    function avg4(p1, p2, p3, p4) {
+      return [
+        (p1[0]+p2[0]+p3[0]+p4[0]) / 4,
+        (p1[1]+p2[1]+p3[1]+p4[1]) / 4,
+        (p1[2]+p2[2]+p3[2]+p4[2]) / 4,
+      ];
+    }
+    return [
+      avg4(f[0], b[0], f[1], b[1]),
+      avg4(f[0], b[0], f[2], b[2]),
+    ];
+  }
+
   return {
     COLORS: COLORS,
     segColor: segColor,
@@ -128,5 +148,6 @@ var Snake = (function () {
     layout3D: layout3D,
     setSegTransform: setSegTransform,
     clearSegTransforms: clearSegTransforms,
+    legFaceCentroids: legFaceCentroids,
   };
 })();
