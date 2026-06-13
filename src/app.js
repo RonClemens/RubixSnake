@@ -33,6 +33,7 @@
   var edXf  = {};              // per-segment transform overrides { id: {tx,ty,tz,rx,ry,rz} }
   var edAxes = {};             // per-segment joint axis directions { id: {a1:'x'|'y'|'z', a2:'x'|'y'|'z'} }
   var edMode3D = 'translate';  // '3D drag mode: translate' | 'rotate'
+  var edRevealCount = 2;       // how many segments are revealed/built in the editor
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
@@ -383,7 +384,8 @@
   function renderEditor() {
     var pg = document.getElementById('pg');
     var joints = activeShape ? activeShape.joints : [];
-    var numSegs = Snake.layout3D(joints).length;
+    var numSegs = edRevealCount;
+    var subJoints = joints.slice(0, edRevealCount - 1);
     var xf = edXf[edSeg] || { tx:0, ty:0, tz:0, rx:0, ry:0, rz:0 };
 
     var segBtns = '';
@@ -434,8 +436,46 @@
     }
 
     var axCfg = edAxes[edSeg] || { a1: 'x', a2: 'x' };
-    var segGeom = Snake.layout3D(joints)[edSeg];
+    var segGeom = Snake.layout3D(subJoints)[edSeg];
     var legCentroids = Snake.legFaceCentroids(segGeom);
+
+    // Hinge-axis override for the joint that connects the last revealed
+    // segment to the next one (only relevant for R/L joints).
+    var hingeH = '';
+    var nextJointIdx = edSeg;
+    if (edSeg === edRevealCount - 1 && nextJointIdx < joints.length) {
+      var nextJt = joints[nextJointIdx];
+      if (nextJt === 'R' || nextJt === 'L') {
+        var defaultHinge = nextJointIdx % 2 === 0 ? 'a2' : 'a1';
+        var curHinge = Snake.getHinge(nextJointIdx) || defaultHinge;
+        hingeH = '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d">' +
+          '<div style="font-size:11px;color:#8b949e;margin-bottom:4px">Hinge axis for joint ' + (nextJointIdx+1) + ' (' + nextJt + ')</div>' +
+          '<div style="display:flex;gap:4px">' +
+            ['a1','a2'].map(function (k) {
+              var on = curHinge === k;
+              var lbl = k === 'a1' ? 'Axis 1' : 'Axis 2';
+              var col = k === 'a1' ? '#ffff00' : '#ff00ff';
+              return '<button data-hinge="' + k + '" style="flex:1;padding:6px;border-radius:6px;font-size:12px;font-weight:700;' +
+                'background:' + (on ? col + '28' : 'rgba(255,255,255,.05)') + ';' +
+                'border:' + (on ? '1.5px solid ' + col : '1px solid #30363d') + ';' +
+                'color:' + (on ? col : '#8b949e') + '">' + lbl + '</button>';
+            }).join('') +
+          '</div>' +
+        '</div>';
+      }
+    }
+
+    // "+ Add Segment" — only when there is a next joint left to reveal.
+    var addCardH = '';
+    if (edRevealCount <= joints.length) {
+      var swatches = Snake.COLORS.map(function (c) {
+        return '<button data-addcolor="' + c.h + '" title="' + c.n + '" style="width:36px;height:36px;border-radius:8px;background:' + c.h + ';border:1.5px solid rgba(255,255,255,.2);cursor:pointer"></button>';
+      }).join('');
+      addCardH = '<div class="card">' +
+        '<div class="lbl">+ Add Segment ' + edRevealCount + ' — pick a color</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' + swatches + '</div>' +
+      '</div>';
+    }
 
     pg.innerHTML =
       '<div class="card" style="padding:10px">' +
@@ -476,7 +516,9 @@
           '<div style="font-size:11px;color:#ff00ff;font-weight:700;margin-bottom:4px">Axis 2 — centroid (' + legCentroids[1].map(r3).join(', ') + ')</div>' +
           '<div style="display:flex;gap:4px">' + axisToggle('a2', axCfg.a2) + '</div>' +
         '</div>' +
-      '</div>';
+        hingeH +
+      '</div>' +
+      addCardH;
 
     // Segment selector
     pg.querySelectorAll('[data-edid]').forEach(function (btn) {
@@ -490,6 +532,27 @@
         var val = this.getAttribute('data-val');
         if (!edAxes[edSeg]) edAxes[edSeg] = { a1: 'x', a2: 'x' };
         edAxes[edSeg][key] = val;
+        Snake.setSegAxes(edSeg, edAxes[edSeg]);
+        renderEditor();
+      };
+    });
+
+    // Hinge-axis override for the next R/L joint
+    pg.querySelectorAll('[data-hinge]').forEach(function (btn) {
+      btn.onclick = function () {
+        Snake.setHinge(nextJointIdx, this.getAttribute('data-hinge'));
+        renderEditor();
+      };
+    });
+
+    // Add segment — pick a color for the next segment in the chain
+    pg.querySelectorAll('[data-addcolor]').forEach(function (btn) {
+      btn.onclick = function () {
+        var hex = this.getAttribute('data-addcolor');
+        var newIdx = edRevealCount;
+        Snake.setSegColor(newIdx, hex);
+        edRevealCount++;
+        edSeg = newIdx;
         renderEditor();
       };
     });
@@ -509,7 +572,7 @@
       edXf[edSeg] = x;
       Snake.setSegTransform(edSeg, x);
       var v3 = document.getElementById('editor-3d');
-      if (v3) Renderer3D.update(joints);
+      if (v3) Renderer3D.update(subJoints);
     }
     ['ed-tx','ed-ty','ed-tz','ed-rx','ed-ry','ed-rz'].forEach(function (id) {
       var el = document.getElementById(id);
@@ -544,7 +607,7 @@
       if (!v3) return;
       Renderer3D.init(v3);
       Renderer3D.setAxisOverlay(fullAxes);
-      Renderer3D.update(joints);
+      Renderer3D.update(subJoints);
       Renderer3D.setEditor(edMode3D, {
         getXf: function (idx) { return edXf[idx] || { tx:0,ty:0,tz:0,rx:0,ry:0,rz:0 }; },
         onSelect: function (idx) {
@@ -589,7 +652,7 @@
               if (el && document.activeElement !== el) el.value = Math.round(xf2[k] * 1000) / 1000;
             });
           }
-          Renderer3D.update(joints);
+          Renderer3D.update(subJoints);
         },
       });
     }, 20);

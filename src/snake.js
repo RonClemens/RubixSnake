@@ -21,7 +21,7 @@ var Snake = (function () {
     { n: 'Green',  h: '#27ae60' },
   ];
 
-  function segColor(i) { return COLORS[i % 6]; }
+  function segColor(i) { return _colors[i] || COLORS[i % 6]; }
 
   // ── vector helpers ─────────────────────────────────────────────────────────
   function vadd(a, b)   { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
@@ -42,6 +42,21 @@ var Snake = (function () {
                     rx: xf.rx||0, ry: xf.ry||0, rz: xf.rz||0 };
   }
   function clearSegTransforms() { _xforms = {}; }
+
+  // ── per-segment color overrides (set when adding a segment in the editor) ──
+  var _colors = {};
+  function setSegColor(id, hex) { _colors[id] = { n: 'Custom', h: hex }; }
+  function clearSegColors() { _colors = {}; }
+
+  // ── per-segment joint axis directions (a1/a2 -> 'x'|'y'|'z') ───────────────
+  var _axes = {};
+  function setSegAxes(id, cfg) { _axes[id] = { a1: (cfg && cfg.a1) || 'x', a2: (cfg && cfg.a2) || 'x' }; }
+  function getSegAxes(id) { return _axes[id] || { a1: 'x', a2: 'x' }; }
+
+  // ── per-joint hinge axis override ('a1'|'a2') for R/L rotations ───────────
+  var _hinges = {};
+  function setHinge(jointIdx, key) { _hinges[jointIdx] = key; }
+  function getHinge(jointIdx) { return _hinges[jointIdx] || null; }
 
   // Rotate v around centroid (px,py,pz) using XYZ Euler (right-hand rule), then translate.
   function _xfApply(v, xf, px, py, pz) {
@@ -93,34 +108,6 @@ var Snake = (function () {
     return { segs: segs, px: px, py: py, fx: fx, fy: fy };
   }
 
-  // ── 3D layout ──────────────────────────────────────────────────────────────
-  function layout3D(joints) {
-    var L = Math.SQRT1_2; // 1/√2 ≈ 0.707; legs = 1, hyp at Y=0.5
-    var segs = [];
-    // Seg 0 (even): hyp face at Y=0.5, right-angle at Y=0.5-L (bottom)
-    segs.push({
-      idx: 0,
-      f: [[-0.5, 0.5-L,  0], [-0.5,  0.5, -L], [-0.5,  0.5,  L]],
-      b: [[ 0.5, 0.5-L,  0], [ 0.5,  0.5, -L], [ 0.5,  0.5,  L]],
-    });
-    // Seg 1 (odd): hyp face at Y=0.5, right-angle at Y=0.5+L (top)
-    segs.push({
-      idx: 1,
-      f: [[ 0.5, 0.5+L,  0], [ 0.5,  0.5,  L], [ 0.5,  0.5, -L]],
-      b: [[ 1.5, 0.5+L,  0], [ 1.5,  0.5,  L], [ 1.5,  0.5, -L]],
-    });
-    segs.forEach(function (seg) {
-      var xf = _xforms[seg.idx];
-      if (!xf) return;
-      var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
-      all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
-      px/=all.length; py/=all.length; pz/=all.length;
-      seg.f = seg.f.map(function (v) { return _xfApply(v, xf, px, py, pz); });
-      seg.b = seg.b.map(function (v) { return _xfApply(v, xf, px, py, pz); });
-    });
-    return segs;
-  }
-
   // ── joint axis helpers ─────────────────────────────────────────────────────
   // Each segment's vertex 0 is the right-angle corner of its triangular cross-
   // section. The two "right-angle side" (leg) faces are 0-1 and 0-2, extruded
@@ -141,6 +128,78 @@ var Snake = (function () {
     ];
   }
 
+  // Point-reflect v through point p (180° inversion).
+  function _reflect(v, p) { return [2*p[0]-v[0], 2*p[1]-v[1], 2*p[2]-v[2]]; }
+
+  // Rotate point v by `angle` radians around the line through point p with
+  // unit-vector direction `axis` (Rodrigues' rotation formula).
+  function _rotateAround(v, p, axis, angle) {
+    var d = vsub(v, p);
+    var cos = Math.cos(angle), sin = Math.sin(angle);
+    var kxd = vcross(axis, d);
+    var kdotd = axis[0]*d[0] + axis[1]*d[1] + axis[2]*d[2];
+    var r = [
+      d[0]*cos + kxd[0]*sin + axis[0]*kdotd*(1-cos),
+      d[1]*cos + kxd[1]*sin + axis[1]*kdotd*(1-cos),
+      d[2]*cos + kxd[2]*sin + axis[2]*kdotd*(1-cos),
+    ];
+    return vadd(r, p);
+  }
+
+  var AXIS_VEC = { x: [1,0,0], y: [0,1,0], z: [0,0,1] };
+
+  // ── 3D layout ──────────────────────────────────────────────────────────────
+  // Builds joints.length + 1 segments by chaining off segment 0. For each
+  // joint i (connecting seg i -> seg i+1): the new segment is the previous
+  // segment's geometry, point-reflected through the midpoint of its "outgoing"
+  // hypotenuse edge (the b1-b2 edge). For R/L joints, the reflected segment is
+  // additionally rotated ±90° around the hinge axis (a1 or a2 leg-face axis of
+  // segment i, direction set via setSegAxes / overridden via setHinge).
+  function layout3D(joints) {
+    var L = Math.SQRT1_2; // 1/√2 ≈ 0.707; legs = 1, hyp at Y=0.5
+    var segs = [];
+    // Seg 0 (even): hyp face at Y=0.5, right-angle at Y=0.5-L (bottom)
+    segs.push({
+      idx: 0,
+      f: [[-0.5, 0.5-L,  0], [-0.5,  0.5, -L], [-0.5,  0.5,  L]],
+      b: [[ 0.5, 0.5-L,  0], [ 0.5,  0.5, -L], [ 0.5,  0.5,  L]],
+    });
+
+    for (var i = 1; i <= joints.length; i++) {
+      var prev = segs[i-1];
+      var p = [
+        (prev.b[1][0] + prev.b[2][0]) / 2,
+        (prev.b[1][1] + prev.b[2][1]) / 2,
+        (prev.b[1][2] + prev.b[2][2]) / 2,
+      ];
+      var f = prev.b.map(function (v) { return _reflect(v, p); });
+      var b = prev.f.map(function (v) { return _reflect(v, p); });
+
+      var jt = joints[i-1];
+      if (jt === 'R' || jt === 'L') {
+        var axCfg = _axes[i-1] || { a1: 'x', a2: 'x' };
+        var hingeKey = _hinges[i-1] || ((i-1) % 2 === 0 ? 'a2' : 'a1');
+        var dir = AXIS_VEC[axCfg[hingeKey]] || AXIS_VEC.x;
+        var angle = (jt === 'R' ? 1 : -1) * Math.PI / 2;
+        f = f.map(function (v) { return _rotateAround(v, p, dir, angle); });
+        b = b.map(function (v) { return _rotateAround(v, p, dir, angle); });
+      }
+
+      segs.push({ idx: i, f: f, b: b });
+    }
+
+    segs.forEach(function (seg) {
+      var xf = _xforms[seg.idx];
+      if (!xf) return;
+      var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
+      all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
+      px/=all.length; py/=all.length; pz/=all.length;
+      seg.f = seg.f.map(function (v) { return _xfApply(v, xf, px, py, pz); });
+      seg.b = seg.b.map(function (v) { return _xfApply(v, xf, px, py, pz); });
+    });
+    return segs;
+  }
+
   return {
     COLORS: COLORS,
     segColor: segColor,
@@ -148,6 +207,12 @@ var Snake = (function () {
     layout3D: layout3D,
     setSegTransform: setSegTransform,
     clearSegTransforms: clearSegTransforms,
+    setSegColor: setSegColor,
+    clearSegColors: clearSegColors,
+    setSegAxes: setSegAxes,
+    getSegAxes: getSegAxes,
+    setHinge: setHinge,
+    getHinge: getHinge,
     legFaceCentroids: legFaceCentroids,
   };
 })();
