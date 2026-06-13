@@ -158,15 +158,15 @@ var Snake = (function () {
   function layout3D(joints) {
     var L = Math.SQRT1_2; // 1/√2 ≈ 0.707; legs = 1, hyp at Y=0.5
     var segs = [];
-    // Seg 0 (even): triangular end caps normal to the global X-axis. Side 1
+    // Seg 0 (even): triangular end caps normal to the global Z-axis. Side 1
     // (leg face 0-1) and Side 2 (leg face 0-2) meet at the right-angle edge
-    // (Y=-L/2, Z=0); the X-axis runs through the point midway between the
-    // midpoints of Side 1 and Side 2 — i.e. Y=0, Z=0 — a line parallel to
-    // Side 3, the hypotenuse panel (Y=L/2, Z=±L).
+    // (X=0, Y=-L/2); the Z-axis runs through the point midway between the
+    // midpoints of Side 1 and Side 2 — i.e. X=0, Y=0 — a line parallel to
+    // Side 3, the hypotenuse panel (X=±L, Y=L/2).
     segs.push({
       idx: 0,
-      f: [[-0.5, -L/2,  0], [-0.5,  L/2, -L], [-0.5,  L/2,  L]],
-      b: [[ 0.5, -L/2,  0], [ 0.5,  L/2, -L], [ 0.5,  L/2,  L]],
+      f: [[ 0, -L/2,  0.5], [-L,  L/2,  0.5], [ L,  L/2,  0.5]],
+      b: [[ 0, -L/2, -0.5], [-L,  L/2, -0.5], [ L,  L/2, -0.5]],
     });
 
     for (var i = 1; i <= joints.length; i++) {
@@ -187,12 +187,6 @@ var Snake = (function () {
         var angle = (jt === 'R' ? 1 : -1) * Math.PI / 2;
         f = f.map(function (v) { return _rotateAround(v, p, dir, angle); });
         b = b.map(function (v) { return _rotateAround(v, p, dir, angle); });
-      }
-
-      // Seg 1: extra +90° twist around the joint's Y-axis to align with Seg 0.
-      if (i === 1) {
-        f = f.map(function (v) { return _rotateAround(v, p, AXIS_VEC.y, Math.PI / 2); });
-        b = b.map(function (v) { return _rotateAround(v, p, AXIS_VEC.y, Math.PI / 2); });
       }
 
       segs.push({ idx: i, f: f, b: b });

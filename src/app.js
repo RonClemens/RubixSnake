@@ -14,9 +14,9 @@
   function r3(v) { return Math.round(v * 1000) / 1000; }
 
   // Seg 0's local Z-axis (the prism's depth/cap-normal axis, which the chain
-  // extends along) is locked to the global X-axis: only tx/rx are free.
+  // extends along) is locked to the global Z-axis: only tz/rz are free.
   function constrainXf(segIdx, xf) {
-    if (segIdx === 0) return { tx: xf.tx||0, ty: 0, tz: 0, rx: xf.rx||0, ry: 0, rz: 0 };
+    if (segIdx === 0) return { tx: 0, ty: 0, tz: xf.tz||0, rx: 0, ry: 0, rz: xf.rz||0 };
     return xf;
   }
 
@@ -493,16 +493,16 @@
       '</div>' +
       '<div class="card">' +
         '<div class="lbl" id="ed-xf-hdr">Transform — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
-        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local Z-axis (its depth axis, which the chain extends along) is locked to the global X-axis — only X translate/rotate are editable.</p>' +
+        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local Z-axis (its depth axis, which the chain extends along) is locked to the global Z-axis — only Z translate/rotate are editable.</p>' +
         '<table style="width:100%;border-collapse:collapse">' +
           '<thead><tr>' +
             '<th></th>' +
             '<th style="text-align:center;font-size:11px;color:#58a6ff;font-weight:700;padding:0 4px 8px">Translate (×s)</th>' +
             '<th style="text-align:center;font-size:11px;color:#f0883e;font-weight:700;padding:0 4px 8px">Rotate (° RHR)</th>' +
           '</tr></thead><tbody>' +
-          axrow('X', '#ff4444', 'ed-tx', xf.tx, 'ed-rx', xf.rx, false) +
+          axrow('X', '#ff4444', 'ed-tx', xf.tx, 'ed-rx', xf.rx, edSeg === 0) +
           axrow('Y', '#44ff44', 'ed-ty', xf.ty, 'ed-ry', xf.ry, edSeg === 0) +
-          axrow('Z', '#4488ff', 'ed-tz', xf.tz, 'ed-rz', xf.rz, edSeg === 0) +
+          axrow('Z', '#4488ff', 'ed-tz', xf.tz, 'ed-rz', xf.rz, false) +
         '</tbody></table>' +
         '<button id="ed-reset" style="margin-top:10px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
       '</div>' +
