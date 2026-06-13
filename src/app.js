@@ -13,7 +13,8 @@
 
   function r3(v) { return Math.round(v * 1000) / 1000; }
 
-  // Seg 0's local X-axis is locked to the global X-axis: only tx/rx are free.
+  // Seg 0's local Z-axis (the prism's depth/cap-normal axis, which the chain
+  // extends along) is locked to the global X-axis: only tx/rx are free.
   function constrainXf(segIdx, xf) {
     if (segIdx === 0) return { tx: xf.tx||0, ty: 0, tz: 0, rx: xf.rx||0, ry: 0, rz: 0 };
     return xf;
@@ -492,7 +493,7 @@
       '</div>' +
       '<div class="card">' +
         '<div class="lbl" id="ed-xf-hdr">Transform — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
-        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local X-axis is locked to the global X-axis — only X translate/rotate are editable.</p>' +
+        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local Z-axis (its depth axis, which the chain extends along) is locked to the global X-axis — only X translate/rotate are editable.</p>' +
         '<table style="width:100%;border-collapse:collapse">' +
           '<thead><tr>' +
             '<th></th>' +
