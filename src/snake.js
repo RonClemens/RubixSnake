@@ -208,6 +208,26 @@ var Snake = (function () {
         ];
       }
 
+      // Seg 2: repeats Seg 0's pattern, mating to Seg 1's Side 1 (leg face
+      // 0-1) — the other leg face from the one Seg 1 shares with Seg 0.
+      // Point-reflect through the midpoint of that edge (in X,Y; same Z
+      // range), which puts Seg 2's hypotenuse back on the upper rail,
+      // alternating with Seg 1's lower rail.
+      if (i === 2) {
+        var mx2 = (prev.f[0][0] + prev.f[1][0]) / 2;
+        var my2 = (prev.f[0][1] + prev.f[1][1]) / 2;
+        f = [
+          [prev.f[1][0], prev.f[1][1], prev.f[0][2]],
+          [prev.f[0][0], prev.f[0][1], prev.f[0][2]],
+          [2*mx2 - prev.f[2][0], 2*my2 - prev.f[2][1], prev.f[0][2]],
+        ];
+        b = [
+          [prev.b[1][0], prev.b[1][1], prev.b[0][2]],
+          [prev.b[0][0], prev.b[0][1], prev.b[0][2]],
+          [2*mx2 - prev.b[2][0], 2*my2 - prev.b[2][1], prev.b[0][2]],
+        ];
+      }
+
       segs.push({ idx: i, f: f, b: b });
     }
 
