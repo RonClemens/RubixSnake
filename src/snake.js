@@ -33,6 +33,10 @@ var Snake = (function () {
       a[0]*b[1] - a[1]*b[0],
     ];
   }
+  function vnorm(a) {
+    var len = Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+    return [a[0]/len, a[1]/len, a[2]/len];
+  }
 
   // ── segment transform overrides (used by the editor tab) ──────────────────
   var _xforms = {};
@@ -226,6 +230,41 @@ var Snake = (function () {
           [prev.b[0][0], prev.b[0][1], prev.b[0][2]],
           [2*mx2 - prev.b[2][0], 2*my2 - prev.b[2][1], prev.b[0][2]],
         ];
+      }
+
+      // Seg 3: mates to Seg 2's Side 2 (alternating back from the Side 1
+      // mate used for Seg 2), via the same point-reflection as Seg 1. If
+      // joint 2 is an R/L turn, the result is additionally rotated ±90°
+      // around the axis normal to Seg 2's open Side 2 face, pivoting
+      // through that face's center — the joint's hinge axis, derived from
+      // Seg 2's own orientation rather than a fixed global axis.
+      if (i === 3) {
+        var mx3 = (prev.f[0][0] + prev.f[2][0]) / 2;
+        var my3 = (prev.f[0][1] + prev.f[2][1]) / 2;
+        f = [
+          [prev.f[2][0], prev.f[2][1], prev.f[0][2]],
+          [2*mx3 - prev.f[1][0], 2*my3 - prev.f[1][1], prev.f[0][2]],
+          [prev.f[0][0], prev.f[0][1], prev.f[0][2]],
+        ];
+        b = [
+          [prev.b[2][0], prev.b[2][1], prev.b[0][2]],
+          [2*mx3 - prev.b[1][0], 2*my3 - prev.b[1][1], prev.b[0][2]],
+          [prev.b[0][0], prev.b[0][1], prev.b[0][2]],
+        ];
+
+        if (jt === 'R' || jt === 'L') {
+          var pivot3 = [
+            (prev.f[0][0] + prev.b[0][0] + prev.f[2][0] + prev.b[2][0]) / 4,
+            (prev.f[0][1] + prev.b[0][1] + prev.f[2][1] + prev.b[2][1]) / 4,
+            (prev.f[0][2] + prev.b[0][2] + prev.f[2][2] + prev.b[2][2]) / 4,
+          ];
+          var depthDir3 = vnorm(vsub(prev.f[0], prev.b[0]));
+          var inPlaneDir3 = vnorm(vsub(prev.f[2], prev.f[0]));
+          var rotAxis3 = vnorm(vcross(depthDir3, inPlaneDir3));
+          var angle3 = (jt === 'R' ? 1 : -1) * Math.PI / 2;
+          f = f.map(function (v) { return _rotateAround(v, pivot3, rotAxis3, angle3); });
+          b = b.map(function (v) { return _rotateAround(v, pivot3, rotAxis3, angle3); });
+        }
       }
 
       segs.push({ idx: i, f: f, b: b });
