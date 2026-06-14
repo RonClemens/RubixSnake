@@ -23,6 +23,7 @@
   var guideStep   = 0;         // 0=intro, 1–23=joints, 24=done
   var edSeg = 0;               // selected segment in editor
   var edXf  = {};              // per-segment rotation overrides { id: degrees }
+  var edFocusAll = true;       // 3D camera: true = fit whole snake, false = zoom to edSeg
   var edRevealCount = 2;       // how many segments are revealed/built in the editor
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
@@ -428,7 +429,11 @@
 
     // Segment selector
     pg.querySelectorAll('[data-edid]').forEach(function (btn) {
-      btn.onclick = function () { edSeg = +this.getAttribute('data-edid'); renderEditor(); };
+      btn.onclick = function () {
+        edSeg = +this.getAttribute('data-edid');
+        edFocusAll = false;
+        renderEditor();
+      };
     });
 
     // Add segment — pick a color for the next segment in the chain
@@ -439,6 +444,7 @@
         Snake.setSegColor(newIdx, hex);
         edRevealCount++;
         edSeg = newIdx;
+        edFocusAll = true;
         renderEditor();
       };
     });
@@ -453,7 +459,7 @@
         Snake.setSegTransform(edSeg, next);
         var val = document.getElementById('ed-rot-val');
         if (val) val.textContent = next + '°';
-        Renderer3D.update(subJoints);
+        Renderer3D.update(subJoints, { highlight: edSeg, focus: edFocusAll ? 'all' : 'segment' });
       };
     });
 
@@ -470,11 +476,12 @@
       var v3 = document.getElementById('editor-3d');
       if (!v3) return;
       Renderer3D.init(v3);
-      Renderer3D.update(subJoints);
+      Renderer3D.update(subJoints, { highlight: edSeg, focus: edFocusAll ? 'all' : 'segment' });
       Renderer3D.setEditor({
         onSelect: function (idx) {
-          if (idx === edSeg) return;
+          if (idx === edSeg && !edFocusAll) return;
           edSeg = idx;
+          edFocusAll = false;
           renderEditor();
         },
       });

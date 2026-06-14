@@ -3,6 +3,7 @@
 
 var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], axesHelper = null, axesLabels = [], animFrame = null;
+  var highlightMesh = null;
   var spherical = { theta: Math.PI, phi: Math.PI / 2, r: 4 };
   var orbitCenter = new THREE.Vector3();
 
@@ -92,9 +93,21 @@ var Renderer3D = (function () {
     camera.updateProjectionMatrix();
   }
 
-  function update(joints) {
+  function update(joints, opts) {
+    opts = opts || {};
+    var highlightIdx = opts.highlight;
+    var focusMode = opts.focus || 'all';
+
     meshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     meshes = [];
+    if (highlightMesh) {
+      scene.remove(highlightMesh);
+      highlightMesh.geometry.dispose();
+      highlightMesh.material.dispose();
+      highlightMesh = null;
+    }
+
+    var ghosting = focusMode === 'segment' && typeof highlightIdx === 'number';
 
     Snake.layout3D(joints).forEach(function (seg) {
       var f = seg.f, b = seg.b;
@@ -109,32 +122,69 @@ var Renderer3D = (function () {
       var geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(v, 3));
       geo.setIndex(PRISM_IDX);
+      var isHighlighted = seg.idx === highlightIdx;
+      var ghost = ghosting && !isHighlighted;
       var mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
         color: new THREE.Color(Snake.segColor(seg.idx).h),
         shininess: 60,
         flatShading: true,
+        emissive: isHighlighted ? 0xffaa00 : 0x000000,
+        emissiveIntensity: 0.5,
+        transparent: ghost,
+        opacity: ghost ? 0.15 : 1,
+        depthWrite: !ghost,
       }));
       mesh.userData.segIdx = seg.idx;
       scene.add(mesh);
       meshes.push(mesh);
+
+      if (isHighlighted) {
+        highlightMesh = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geo),
+          new THREE.LineBasicMaterial({ color: 0xffd60a })
+        );
+        highlightMesh.renderOrder = 998;
+        scene.add(highlightMesh);
+      }
     });
 
     if (meshes.length) {
       var box = new THREE.Box3();
-      meshes.forEach(function (m) { box.expandByObject(m); });
-      box.getCenter(orbitCenter);
-      var size = box.getSize(new THREE.Vector3());
-      var diag = size.length();
-      var shortSide = Math.min(size.x, size.y, size.z);
-      spherical.r = Math.max(diag * 0.7, shortSide * 6, 3);
+      var focusMesh = focusMode === 'segment' &&
+        meshes.find(function (m) { return m.userData.segIdx === highlightIdx; });
+
+      if (focusMesh) {
+        box.setFromObject(focusMesh);
+        fitToBox(box, 1.4, 1.8);
+      } else {
+        meshes.forEach(function (m) { box.expandByObject(m); });
+        fitToBox(box, 1.15, 3);
+      }
+
+      var showAxes = !focusMesh;
       if (axesHelper) {
-        var offsets = [[4.4,0,0],[0,4.4,0],[0,0,4.4]];
-        axesLabels.forEach(function (s, i) {
-          s.position.set(offsets[i][0], offsets[i][1], offsets[i][2]);
-        });
+        axesHelper.visible = showAxes;
+        axesLabels.forEach(function (s) { s.visible = showAxes; });
+        if (showAxes) {
+          var offsets = [[4.4,0,0],[0,4.4,0],[0,0,4.4]];
+          axesLabels.forEach(function (s, i) {
+            s.position.set(offsets[i][0], offsets[i][1], offsets[i][2]);
+          });
+        }
       }
       updateCamera();
     }
+  }
+
+  // Position orbitCenter at box's center and pick a camera distance that
+  // frames the whole box within the camera's vertical AND horizontal FOV.
+  function fitToBox(box, padding, minR) {
+    var sphere = box.getBoundingSphere(new THREE.Sphere());
+    orbitCenter.copy(sphere.center);
+    var vFov = camera.fov * Math.PI / 180;
+    var hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+    var fov = Math.min(vFov, hFov);
+    spherical.r = Math.max(sphere.radius / Math.sin(fov / 2) * padding, minR);
   }
 
   function updateCamera() {
