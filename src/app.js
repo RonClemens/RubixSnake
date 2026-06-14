@@ -14,10 +14,10 @@
   function r3(v) { return Math.round(v * 1000) / 1000; }
 
   // Seg 0's local Z-axis (the prism's depth/cap-normal axis, which the chain
-  // extends along) is locked to the global Z-axis: only tz/rz are free.
+  // extends along) is locked to the global Z-axis: only its Z rotation is free.
   function constrainXf(segIdx, xf) {
-    if (segIdx === 0) return { tx: 0, ty: 0, tz: xf.tz||0, rx: 0, ry: 0, rz: xf.rz||0 };
-    return xf;
+    if (segIdx === 0) return { tx: 0, ty: 0, tz: 0, rx: 0, ry: 0, rz: xf.rz||0 };
+    return { tx: 0, ty: 0, tz: 0, rx: xf.rx||0, ry: xf.ry||0, rz: xf.rz||0 };
   }
 
   function dirtxt(t, jid) {
@@ -33,7 +33,6 @@
   var edSeg = 0;               // selected segment in editor
   var edXf  = {};              // per-segment transform overrides { id: {tx,ty,tz,rx,ry,rz} }
   var edAxes = {};             // per-segment joint axis directions { id: {a1:'x'|'y'|'z', a2:'x'|'y'|'z'} }
-  var edMode3D = 'translate';  // '3D drag mode: translate' | 'rotate'
   var edRevealCount = 2;       // how many segments are revealed/built in the editor
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
@@ -400,30 +399,15 @@
         'Seg&nbsp;' + i + '</button>';
     }
 
-    function modeBtn(id, label, mode) {
-      var on = edMode3D === mode;
-      return '<button id="' + id + '" style="flex:1;padding:7px;border-radius:7px;font-size:12px;font-weight:700;' +
-        'background:' + (on ? 'rgba(88,166,255,.15)' : 'rgba(255,255,255,.05)') + ';' +
-        'border:' + (on ? '1.5px solid #58a6ff' : '1px solid #30363d') + ';' +
-        'color:' + (on ? '#58a6ff' : '#8b949e') + '">' + label + '</button>';
-    }
-
-    function numinp(id, val, locked) {
+    function rotRow(axis, col, rid, rval, locked) {
+      var v = ((Math.round(rval) % 360) + 360) % 360;
       var dis = locked ? ' disabled' : '';
-      return '<div style="display:flex;gap:3px;align-items:center;justify-content:center' + (locked ? ';opacity:.35' : '') + '">' +
-        '<button data-neg="' + id + '"' + dis + ' style="width:26px;height:30px;flex-shrink:0;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:14px;font-weight:700">±</button>' +
-        '<input type="text" inputmode="decimal" id="' + id + '" value="' + (Math.round(val * 1000) / 1000) + '"' + dis + ' ' +
-        'style="width:60px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#fff;' +
-        'padding:6px 4px;font-size:13px;text-align:center">' +
-        '</div>';
-    }
-
-    function axrow(axis, col, tid, tval, rid, rval, locked) {
-      return '<tr>' +
-        '<td style="color:' + col + ';font-weight:700;font-size:13px;padding:4px 10px 4px 0;width:20px">' + axis + '</td>' +
-        '<td style="padding:3px 4px">' + numinp(tid, tval, locked) + '</td>' +
-        '<td style="padding:3px 4px">' + numinp(rid, rval, locked) + '</td>' +
-      '</tr>';
+      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px' + (locked ? ';opacity:.35' : '') + '">' +
+        '<span style="color:' + col + ';font-weight:700;width:14px;font-size:13px">' + axis + '</span>' +
+        '<button data-rot="' + rid + '" data-delta="-90"' + dis + ' style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:13px;font-weight:700">-90°</button>' +
+        '<span id="ed-' + rid + '-val" style="width:46px;text-align:center;color:#fff;font-size:13px;font-weight:700">' + v + '°</span>' +
+        '<button data-rot="' + rid + '" data-delta="90"' + dis + ' style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:13px;font-weight:700">+90°</button>' +
+      '</div>';
     }
 
     function axisToggle(key, val) {
@@ -480,31 +464,20 @@
 
     pg.innerHTML =
       '<div class="card" style="padding:10px">' +
-        '<div class="lbl">3D — tap segment to select &amp; drag to transform</div>' +
+        '<div class="lbl">3D — tap segment to select &amp; drag to orbit</div>' +
         '<div id="editor-3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
-        '<div style="display:flex;gap:6px;margin-top:8px">' +
-          modeBtn('ed-mode-t', '↔ Translate (snap 0.5)', 'translate') +
-          modeBtn('ed-mode-r', '↻ Rotate (snap 45°)', 'rotate') +
-        '</div>' +
       '</div>' +
       '<div class="card">' +
         '<div class="lbl">Segment</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + segBtns + '</div>' +
       '</div>' +
       '<div class="card">' +
-        '<div class="lbl" id="ed-xf-hdr">Transform — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
-        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local Z-axis (its depth axis, which the chain extends along) is locked to the global Z-axis — only Z translate/rotate are editable.</p>' +
-        '<table style="width:100%;border-collapse:collapse">' +
-          '<thead><tr>' +
-            '<th></th>' +
-            '<th style="text-align:center;font-size:11px;color:#58a6ff;font-weight:700;padding:0 4px 8px">Translate (×s)</th>' +
-            '<th style="text-align:center;font-size:11px;color:#f0883e;font-weight:700;padding:0 4px 8px">Rotate (° RHR)</th>' +
-          '</tr></thead><tbody>' +
-          axrow('X', '#ff4444', 'ed-tx', xf.tx, 'ed-rx', xf.rx, edSeg === 0) +
-          axrow('Y', '#44ff44', 'ed-ty', xf.ty, 'ed-ry', xf.ry, edSeg === 0) +
-          axrow('Z', '#4488ff', 'ed-tz', xf.tz, 'ed-rz', xf.rz, false) +
-        '</tbody></table>' +
-        '<button id="ed-reset" style="margin-top:10px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
+        '<div class="lbl" id="ed-xf-hdr">Rotate — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
+        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local Z-axis (its depth axis, which the chain extends along) is locked to the global Z-axis — only Z rotation is editable.</p>' +
+        rotRow('X', '#ff4444', 'rx', xf.rx, edSeg === 0) +
+        rotRow('Y', '#44ff44', 'ry', xf.ry, edSeg === 0) +
+        rotRow('Z', '#4488ff', 'rz', xf.rz, false) +
+        '<button id="ed-reset" style="margin-top:6px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
       '</div>' +
       '<div class="card">' +
         '<div class="lbl">Joint Axes — Seg ' + edSeg + '</div>' +
@@ -558,36 +531,20 @@
       };
     });
 
-    // Mode toggle buttons
-    document.getElementById('ed-mode-t').onclick = function () {
-      edMode3D = 'translate'; Renderer3D.setEdMode('translate'); renderEditor();
-    };
-    document.getElementById('ed-mode-r').onclick = function () {
-      edMode3D = 'rotate'; Renderer3D.setEdMode('rotate'); renderEditor();
-    };
-
-    // Manual inputs
-    function applyXf() {
-      function v(id) { var n = parseFloat(document.getElementById(id).value); return isNaN(n) ? 0 : n; }
-      var x = constrainXf(edSeg, { tx:v('ed-tx'), ty:v('ed-ty'), tz:v('ed-tz'), rx:v('ed-rx'), ry:v('ed-ry'), rz:v('ed-rz') });
-      edXf[edSeg] = x;
-      Snake.setSegTransform(edSeg, x);
-      var v3 = document.getElementById('editor-3d');
-      if (v3) Renderer3D.update(subJoints);
-    }
-    ['ed-tx','ed-ty','ed-tz','ed-rx','ed-ry','ed-rz'].forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el) el.oninput = applyXf;
-    });
-
-    // Sign-toggle buttons (mobile decimal keypads have no minus key)
-    pg.querySelectorAll('[data-neg]').forEach(function (btn) {
+    // ±90° rotation buttons
+    pg.querySelectorAll('[data-rot]').forEach(function (btn) {
       btn.onclick = function () {
-        var el = document.getElementById(this.getAttribute('data-neg'));
-        var n = parseFloat(el.value);
-        if (isNaN(n)) n = 0;
-        el.value = -n;
-        applyXf();
+        var key = this.getAttribute('data-rot');
+        var delta = +this.getAttribute('data-delta');
+        var cur = edXf[edSeg] || { tx:0, ty:0, tz:0, rx:0, ry:0, rz:0 };
+        var next = { tx:0, ty:0, tz:0, rx:cur.rx||0, ry:cur.ry||0, rz:cur.rz||0 };
+        next[key] = ((next[key] + delta) % 360 + 360) % 360;
+        next = constrainXf(edSeg, next);
+        edXf[edSeg] = next;
+        Snake.setSegTransform(edSeg, next);
+        var val = document.getElementById('ed-' + key + '-val');
+        if (val) val.textContent = next[key] + '°';
+        Renderer3D.update(subJoints);
       };
     });
 
@@ -609,51 +566,11 @@
       Renderer3D.init(v3);
       Renderer3D.setAxisOverlay(fullAxes);
       Renderer3D.update(subJoints);
-      Renderer3D.setEditor(edMode3D, {
-        getXf: function (idx) { return edXf[idx] || { tx:0,ty:0,tz:0,rx:0,ry:0,rz:0 }; },
+      Renderer3D.setEditor({
         onSelect: function (idx) {
           if (idx === edSeg) return;
           edSeg = idx;
-          // Update segment buttons
-          document.querySelectorAll('[data-edid]').forEach(function (b) {
-            var bi = +b.getAttribute('data-edid');
-            var sc2 = Snake.segColor(bi).h;
-            b.style.background = bi === idx ? sc2 + '28' : 'rgba(255,255,255,.05)';
-            b.style.border = bi === idx ? '1.5px solid ' + sc2 : '1px solid #30363d';
-            b.style.fontWeight = bi === idx ? '700' : '400';
-          });
-          var hdr = document.getElementById('ed-xf-hdr');
-          if (hdr) hdr.textContent = 'Transform — Seg ' + idx + ' (' + Snake.segColor(idx).n + ')';
-          var rb = document.getElementById('ed-reset');
-          if (rb) rb.textContent = 'Reset Seg ' + idx;
-          var xf2 = edXf[idx] || { tx:0,ty:0,tz:0,rx:0,ry:0,rz:0 };
-          ['tx','ty','tz','rx','ry','rz'].forEach(function (k) {
-            var el = document.getElementById('ed-' + k);
-            if (el) el.value = Math.round(xf2[k] * 1000) / 1000;
-          });
-          // Toggle Y/Z lock for seg 0
-          var note = document.getElementById('ed-lock-note');
-          if (note) note.style.display = idx === 0 ? 'block' : 'none';
-          ['ty','tz','ry','rz'].forEach(function (k) {
-            var el = document.getElementById('ed-' + k);
-            var negBtn = document.querySelector('[data-neg="ed-' + k + '"]');
-            var wrap = el && el.parentElement;
-            if (el) el.disabled = idx === 0;
-            if (negBtn) negBtn.disabled = idx === 0;
-            if (wrap) wrap.style.opacity = idx === 0 ? '.35' : '';
-          });
-        },
-        onTransform: function (idx, xf2) {
-          xf2 = constrainXf(idx, xf2);
-          edXf[idx] = xf2;
-          Snake.setSegTransform(idx, xf2);
-          if (idx === edSeg) {
-            ['tx','ty','tz','rx','ry','rz'].forEach(function (k) {
-              var el = document.getElementById('ed-' + k);
-              if (el && document.activeElement !== el) el.value = Math.round(xf2[k] * 1000) / 1000;
-            });
-          }
-          Renderer3D.update(subJoints);
+          renderEditor();
         },
       });
     }, 20);

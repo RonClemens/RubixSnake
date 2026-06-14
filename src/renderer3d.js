@@ -7,8 +7,7 @@ var Renderer3D = (function () {
   var orbitCenter = new THREE.Vector3();
 
   // Editor state
-  var edCbs = null;          // { getXf(segIdx), onSelect(segIdx), onTransform(segIdx, xf) }
-  var edMode = 'translate';  // 'translate' | 'rotate'
+  var edCbs = null;          // { onSelect(segIdx) }
 
   // Joint-axis overlay: { segIdx: { a1: 'x'|'y'|'z', a2: 'x'|'y'|'z' } }
   var axisOverlay = null;
@@ -183,17 +182,7 @@ var Renderer3D = (function () {
 
   function addOrbit(container, canvas) {
     var drag = false, lx = 0, ly = 0;
-
-    // Editor drag state (local to addOrbit so it doesn't bleed)
-    var edDrag = false;
-    var edDragMesh = null;
-    var edDragStartClient = { x: 0, y: 0 };
-    var edDragBaseXf = null;
-    var edDragPlane = new THREE.Plane();
-    var edDragStartWorld = new THREE.Vector3();
     var edRaycaster = new THREE.Raycaster();
-
-    function snapTo(v, step) { return Math.round(v / step) * step; }
 
     function ndcFromClient(cx, cy) {
       var rect = canvas.getBoundingClientRect();
@@ -210,51 +199,6 @@ var Renderer3D = (function () {
       return hits.length > 0 ? hits[0].object : null;
     }
 
-    function meshCentroid(mesh) {
-      var pos = mesh.geometry.attributes.position;
-      var cx=0, cy=0, cz=0, n=pos.count;
-      for (var i=0; i<n; i++) { cx+=pos.getX(i); cy+=pos.getY(i); cz+=pos.getZ(i); }
-      return new THREE.Vector3(cx/n, cy/n, cz/n);
-    }
-
-    function startEdDrag(cx, cy, mesh) {
-      var xf = edCbs.getXf(mesh.userData.segIdx);
-      edDragBaseXf = { tx:xf.tx||0, ty:xf.ty||0, tz:xf.tz||0,
-                       rx:xf.rx||0, ry:xf.ry||0, rz:xf.rz||0 };
-      edDragStartClient = { x: cx, y: cy };
-      if (edMode === 'translate') {
-        var centroid = meshCentroid(mesh);
-        var normal = new THREE.Vector3();
-        camera.getWorldDirection(normal);
-        edDragPlane.setFromNormalAndCoplanarPoint(normal, centroid);
-        edRaycaster.setFromCamera(ndcFromClient(cx, cy), camera);
-        edRaycaster.ray.intersectPlane(edDragPlane, edDragStartWorld);
-      }
-      edDragMesh = mesh;
-      edDrag = true;
-    }
-
-    function moveEdDrag(cx, cy) {
-      if (!edDrag || !edDragMesh || !edCbs) return;
-      var xf = { tx:edDragBaseXf.tx, ty:edDragBaseXf.ty, tz:edDragBaseXf.tz,
-                 rx:edDragBaseXf.rx, ry:edDragBaseXf.ry, rz:edDragBaseXf.rz };
-      if (edMode === 'translate') {
-        var worldNow = new THREE.Vector3();
-        edRaycaster.setFromCamera(ndcFromClient(cx, cy), camera);
-        if (edRaycaster.ray.intersectPlane(edDragPlane, worldNow)) {
-          xf.tx = snapTo(edDragBaseXf.tx + worldNow.x - edDragStartWorld.x, 0.5);
-          xf.ty = snapTo(edDragBaseXf.ty + worldNow.y - edDragStartWorld.y, 0.5);
-          xf.tz = snapTo(edDragBaseXf.tz + worldNow.z - edDragStartWorld.z, 0.5);
-        }
-      } else {
-        xf.ry = snapTo(edDragBaseXf.ry + (cx - edDragStartClient.x) * 0.5, 45);
-        xf.rx = snapTo(edDragBaseXf.rx + (cy - edDragStartClient.y) * 0.5, 45);
-      }
-      edCbs.onTransform(edDragMesh.userData.segIdx, xf);
-    }
-
-    function endEdDrag() { edDrag = false; edDragMesh = null; }
-
     function onMove(dx, dy) {
       spherical.theta -= dx * 0.008;
       spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.008));
@@ -267,15 +211,13 @@ var Renderer3D = (function () {
         var hit = hitMesh(e.clientX, e.clientY);
         if (hit) {
           edCbs.onSelect(hit.userData.segIdx);
-          startEdDrag(e.clientX, e.clientY, hit);
           return;
         }
       }
       drag = true; lx = e.clientX; ly = e.clientY;
     });
-    window.addEventListener('mouseup', function () { drag = false; endEdDrag(); });
+    window.addEventListener('mouseup', function () { drag = false; });
     canvas.addEventListener('mousemove', function (e) {
-      if (edDrag) { moveEdDrag(e.clientX, e.clientY); return; }
       if (!drag) return;
       onMove(e.clientX - lx, e.clientY - ly);
       lx = e.clientX; ly = e.clientY;
@@ -290,7 +232,6 @@ var Renderer3D = (function () {
           var hit = hitMesh(e.touches[0].clientX, e.touches[0].clientY);
           if (hit) {
             edCbs.onSelect(hit.userData.segIdx);
-            startEdDrag(e.touches[0].clientX, e.touches[0].clientY, hit);
             lt = null; lpinch = null;
             return;
           }
@@ -298,7 +239,6 @@ var Renderer3D = (function () {
         lt = e.touches[0]; lpinch = null;
       }
       if (e.touches.length === 2) {
-        endEdDrag();
         lpinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         lt = null;
       }
@@ -310,20 +250,18 @@ var Renderer3D = (function () {
         if (lpinch) { spherical.r = Math.max(1, spherical.r * (lpinch / dist)); updateCamera(); }
         lpinch = dist;
       } else if (e.touches.length === 1) {
-        if (edDrag) { moveEdDrag(e.touches[0].clientX, e.touches[0].clientY); }
-        else if (lt) { onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY); lt = e.touches[0]; }
+        if (lt) { onMove(e.touches[0].clientX - lt.clientX, e.touches[0].clientY - lt.clientY); lt = e.touches[0]; }
       }
     }, { passive: false });
     canvas.addEventListener('touchend', function () {
-      lt = null; lpinch = null; endEdDrag();
+      lt = null; lpinch = null;
     }, { passive: true });
   }
 
   return {
     init: init,
     update: update,
-    setEditor: function (mode, cbs) { edMode = mode; edCbs = cbs; },
-    setEdMode: function (mode) { edMode = mode; },
+    setEditor: function (cbs) { edCbs = cbs; },
     clearEditor: function () { edCbs = null; },
     setAxisOverlay: function (cfg) { axisOverlay = cfg; },
     clearAxisOverlay: function () { axisOverlay = null; },
