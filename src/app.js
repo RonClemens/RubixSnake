@@ -11,15 +11,6 @@
 
   function pl(jid) { return jid % 2 === 1 ? 'vertical' : 'horizontal'; }
 
-  function r3(v) { return Math.round(v * 1000) / 1000; }
-
-  // Seg 0's local Z-axis (the prism's depth/cap-normal axis, which the chain
-  // extends along) is locked to the global Z-axis: only its Z rotation is free.
-  function constrainXf(segIdx, xf) {
-    if (segIdx === 0) return { tx: 0, ty: 0, tz: 0, rx: 0, ry: 0, rz: xf.rz||0 };
-    return { tx: 0, ty: 0, tz: 0, rx: xf.rx||0, ry: xf.ry||0, rz: xf.rz||0 };
-  }
-
   function dirtxt(t, jid) {
     if (t === 'S') return 'Continue straight — no fold needed';
     var p = pl(jid);
@@ -31,8 +22,7 @@
   var activeTab   = 'guide';   // 'guide' | 'engine' | 'editor'
   var guideStep   = 0;         // 0=intro, 1–23=joints, 24=done
   var edSeg = 0;               // selected segment in editor
-  var edXf  = {};              // per-segment transform overrides { id: {tx,ty,tz,rx,ry,rz} }
-  var edAxes = {};             // per-segment joint axis directions { id: {a1:'x'|'y'|'z', a2:'x'|'y'|'z'} }
+  var edXf  = {};              // per-segment rotation overrides { id: degrees }
   var edRevealCount = 2;       // how many segments are revealed/built in the editor
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
@@ -65,7 +55,6 @@
     // Apply/clear editor transforms so guide & engine always see raw geometry
     Snake.clearSegTransforms();
     Renderer3D.clearEditor();
-    Renderer3D.clearAxisOverlay();
     if (t === 'editor') {
       Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
     }
@@ -386,7 +375,7 @@
     var joints = activeShape ? activeShape.joints : [];
     var numSegs = edRevealCount;
     var subJoints = joints.slice(0, edRevealCount - 1);
-    var xf = edXf[edSeg] || { tx:0, ty:0, tz:0, rx:0, ry:0, rz:0 };
+    var xf = edXf[edSeg] || 0;
 
     var segBtns = '';
     for (var i = 0; i < numSegs; i++) {
@@ -399,55 +388,13 @@
         'Seg&nbsp;' + i + '</button>';
     }
 
-    function rotRow(axis, col, rid, rval, locked) {
+    function rotRow(rval) {
       var v = ((Math.round(rval) % 360) + 360) % 360;
-      var dis = locked ? ' disabled' : '';
-      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px' + (locked ? ';opacity:.35' : '') + '">' +
-        '<span style="color:' + col + ';font-weight:700;width:14px;font-size:13px">' + axis + '</span>' +
-        '<button data-rot="' + rid + '" data-delta="-90"' + dis + ' style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:13px;font-weight:700">-90°</button>' +
-        '<span id="ed-' + rid + '-val" style="width:46px;text-align:center;color:#fff;font-size:13px;font-weight:700">' + v + '°</span>' +
-        '<button data-rot="' + rid + '" data-delta="90"' + dis + ' style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:13px;font-weight:700">+90°</button>' +
+      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+        '<button data-rot="-90" style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:13px;font-weight:700">-90°</button>' +
+        '<span id="ed-rot-val" style="width:46px;text-align:center;color:#fff;font-size:13px;font-weight:700">' + v + '°</span>' +
+        '<button data-rot="90" style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:13px;font-weight:700">+90°</button>' +
       '</div>';
-    }
-
-    function axisToggle(key, val) {
-      return ['x','y','z'].map(function (ax) {
-        var on = val === ax;
-        return '<button data-axis="' + key + '" data-val="' + ax + '" style="flex:1;padding:6px;border-radius:6px;font-size:12px;font-weight:700;' +
-          'background:' + (on ? 'rgba(88,166,255,.15)' : 'rgba(255,255,255,.05)') + ';' +
-          'border:' + (on ? '1.5px solid #58a6ff' : '1px solid #30363d') + ';' +
-          'color:' + (on ? '#58a6ff' : '#8b949e') + '">' + ax.toUpperCase() + '</button>';
-      }).join('');
-    }
-
-    var axCfg = edAxes[edSeg] || { a1: 'x', a2: 'x' };
-    var segGeom = Snake.layout3D(subJoints)[edSeg];
-    var legCentroids = Snake.legFaceCentroids(segGeom);
-
-    // Hinge-axis override for the joint that connects the last revealed
-    // segment to the next one (only relevant for R/L joints).
-    var hingeH = '';
-    var nextJointIdx = edSeg;
-    if (edSeg === edRevealCount - 1 && nextJointIdx < joints.length) {
-      var nextJt = joints[nextJointIdx];
-      if (nextJt === 'R' || nextJt === 'L') {
-        var defaultHinge = nextJointIdx % 2 === 0 ? 'a2' : 'a1';
-        var curHinge = Snake.getHinge(nextJointIdx) || defaultHinge;
-        hingeH = '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d">' +
-          '<div style="font-size:11px;color:#8b949e;margin-bottom:4px">Hinge axis for joint ' + (nextJointIdx+1) + ' (' + nextJt + ')</div>' +
-          '<div style="display:flex;gap:4px">' +
-            ['a1','a2'].map(function (k) {
-              var on = curHinge === k;
-              var lbl = k === 'a1' ? 'Axis 1' : 'Axis 2';
-              var col = k === 'a1' ? '#ffff00' : '#ff00ff';
-              return '<button data-hinge="' + k + '" style="flex:1;padding:6px;border-radius:6px;font-size:12px;font-weight:700;' +
-                'background:' + (on ? col + '28' : 'rgba(255,255,255,.05)') + ';' +
-                'border:' + (on ? '1.5px solid ' + col : '1px solid #30363d') + ';' +
-                'color:' + (on ? col : '#8b949e') + '">' + lbl + '</button>';
-            }).join('') +
-          '</div>' +
-        '</div>';
-      }
     }
 
     // "+ Add Segment" — only when there is a next joint left to reveal.
@@ -471,52 +418,17 @@
         '<div class="lbl">Segment</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + segBtns + '</div>' +
       '</div>' +
+      (edSeg === 0 ? '' :
       '<div class="card">' +
         '<div class="lbl" id="ed-xf-hdr">Rotate — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
-        '<p id="ed-lock-note" style="font-size:11px;color:#58a6ff;margin-bottom:8px;display:' + (edSeg === 0 ? 'block' : 'none') + '">🔒 Seg 0\'s local Z-axis (its depth axis, which the chain extends along) is locked to the global Z-axis — only Z rotation is editable.</p>' +
-        rotRow('X', '#ff4444', 'rx', xf.rx, edSeg === 0) +
-        rotRow('Y', '#44ff44', 'ry', xf.ry, edSeg === 0) +
-        rotRow('Z', '#4488ff', 'rz', xf.rz, false) +
+        rotRow(xf) +
         '<button id="ed-reset" style="margin-top:6px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
-      '</div>' +
-      '<div class="card">' +
-        '<div class="lbl">Joint Axes — Seg ' + edSeg + '</div>' +
-        '<p style="font-size:11px;color:#6e7681;margin-bottom:8px">Each axis passes through a right-angle face centroid, running parallel to the chosen axis. For segments after the first, directions will refer to the previous segment\'s local axes once chaining is in place.</p>' +
-        '<div style="margin-bottom:10px">' +
-          '<div style="font-size:11px;color:#ffff00;font-weight:700;margin-bottom:4px">Axis 1 — centroid (' + legCentroids[0].map(r3).join(', ') + ')</div>' +
-          '<div style="display:flex;gap:4px">' + axisToggle('a1', axCfg.a1) + '</div>' +
-        '</div>' +
-        '<div>' +
-          '<div style="font-size:11px;color:#ff00ff;font-weight:700;margin-bottom:4px">Axis 2 — centroid (' + legCentroids[1].map(r3).join(', ') + ')</div>' +
-          '<div style="display:flex;gap:4px">' + axisToggle('a2', axCfg.a2) + '</div>' +
-        '</div>' +
-        hingeH +
-      '</div>' +
+      '</div>') +
       addCardH;
 
     // Segment selector
     pg.querySelectorAll('[data-edid]').forEach(function (btn) {
       btn.onclick = function () { edSeg = +this.getAttribute('data-edid'); renderEditor(); };
-    });
-
-    // Joint axis direction toggles
-    pg.querySelectorAll('[data-axis]').forEach(function (btn) {
-      btn.onclick = function () {
-        var key = this.getAttribute('data-axis');
-        var val = this.getAttribute('data-val');
-        if (!edAxes[edSeg]) edAxes[edSeg] = { a1: 'x', a2: 'x' };
-        edAxes[edSeg][key] = val;
-        Snake.setSegAxes(edSeg, edAxes[edSeg]);
-        renderEditor();
-      };
-    });
-
-    // Hinge-axis override for the next R/L joint
-    pg.querySelectorAll('[data-hinge]').forEach(function (btn) {
-      btn.onclick = function () {
-        Snake.setHinge(nextJointIdx, this.getAttribute('data-hinge'));
-        renderEditor();
-      };
     });
 
     // Add segment — pick a color for the next segment in the chain
@@ -534,37 +446,30 @@
     // ±90° rotation buttons
     pg.querySelectorAll('[data-rot]').forEach(function (btn) {
       btn.onclick = function () {
-        var key = this.getAttribute('data-rot');
-        var delta = +this.getAttribute('data-delta');
-        var cur = edXf[edSeg] || { tx:0, ty:0, tz:0, rx:0, ry:0, rz:0 };
-        var next = { tx:0, ty:0, tz:0, rx:cur.rx||0, ry:cur.ry||0, rz:cur.rz||0 };
-        next[key] = ((next[key] + delta) % 360 + 360) % 360;
-        next = constrainXf(edSeg, next);
+        var delta = +this.getAttribute('data-rot');
+        var cur = edXf[edSeg] || 0;
+        var next = ((cur + delta) % 360 + 360) % 360;
         edXf[edSeg] = next;
         Snake.setSegTransform(edSeg, next);
-        var val = document.getElementById('ed-' + key + '-val');
-        if (val) val.textContent = next[key] + '°';
+        var val = document.getElementById('ed-rot-val');
+        if (val) val.textContent = next + '°';
         Renderer3D.update(subJoints);
       };
     });
 
-    document.getElementById('ed-reset').onclick = function () {
+    var edResetBtn = document.getElementById('ed-reset');
+    if (edResetBtn) edResetBtn.onclick = function () {
       delete edXf[edSeg];
       Snake.clearSegTransforms();
       Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
       renderEditor();
     };
 
-    // Build full axis overlay config (defaults for segments not yet customized)
-    var fullAxes = {};
-    for (var ai = 0; ai < numSegs; ai++) fullAxes[ai] = edAxes[ai] || { a1: 'x', a2: 'x' };
-
     // 3D init + wire editor callbacks
     setTimeout(function () {
       var v3 = document.getElementById('editor-3d');
       if (!v3) return;
       Renderer3D.init(v3);
-      Renderer3D.setAxisOverlay(fullAxes);
       Renderer3D.update(subJoints);
       Renderer3D.setEditor({
         onSelect: function (idx) {

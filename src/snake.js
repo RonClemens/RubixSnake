@@ -39,13 +39,14 @@ var Snake = (function () {
   }
   function vmid(a, b) { return [(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2]; }
 
-  // ── segment transform overrides (used by the editor tab) ──────────────────
+  // ── segment rotation overrides (used by the editor tab) ────────────────────
+  // Each segment i >= 1 can be rotated about the hinge axis of the joint
+  // connecting it to segment i-1 (the normal to segment i-1's "open side"
+  // face — see jointHingeAxis). Seg 0 has no previous segment and is never
+  // rotated.
   var _xforms = {};
 
-  function setSegTransform(id, xf) {
-    _xforms[id] = { tx: xf.tx||0, ty: xf.ty||0, tz: xf.tz||0,
-                    rx: xf.rx||0, ry: xf.ry||0, rz: xf.rz||0 };
-  }
+  function setSegTransform(id, deg) { _xforms[id] = deg || 0; }
   function clearSegTransforms() { _xforms = {}; }
 
   // ── per-segment color overrides (set when adding a segment in the editor) ──
@@ -53,48 +54,20 @@ var Snake = (function () {
   function setSegColor(id, hex) { _colors[id] = { n: 'Custom', h: hex }; }
   function clearSegColors() { _colors = {}; }
 
-  // ── per-segment joint axis directions (a1/a2 -> 'x'|'y'|'z') ───────────────
-  var _axes = {};
-  function setSegAxes(id, cfg) { _axes[id] = { a1: (cfg && cfg.a1) || 'x', a2: (cfg && cfg.a2) || 'x' }; }
-  function getSegAxes(id) { return _axes[id] || { a1: 'x', a2: 'x' }; }
-
-  // ── per-joint hinge axis override ('a1'|'a2') for R/L rotations ───────────
-  var _hinges = {};
-  function setHinge(jointIdx, key) { _hinges[jointIdx] = key; }
-  function getHinge(jointIdx) { return _hinges[jointIdx] || null; }
-
-  // Rotate v around `center` by xf.rx/ry/rz (degrees), each about its own
-  // fixed axis taken from `frame` (frame.x/y/z — unit vectors derived from
-  // the previous segment's local orientation; see segLocalFrame).
-  function _xfApply(v, xf, center, frame) {
-    var d = Math.PI / 180;
-    var p = v;
-    if (xf.rx) p = _rotateAround(p, center, frame.x, xf.rx * d);
-    if (xf.ry) p = _rotateAround(p, center, frame.y, xf.ry * d);
-    if (xf.rz) p = _rotateAround(p, center, frame.z, xf.rz * d);
-    return p;
-  }
-
-  // Local rotation frame for a segment's editor controls, derived from the
-  // PREVIOUS segment's current (post-edit) orientation: z = its depth
-  // direction (f0->b0), y = the in-plane direction of its "open side" leg
-  // face (the face this segment was mated from), x = the normal to that
-  // face (cross(z, y) — the joint's hinge/"red" axis). Seg 0 has no
-  // previous segment, so it uses the fixed global axes.
-  function segLocalFrame(prevSeg) {
-    if (!prevSeg) return { x: [1,0,0], y: [0,1,0], z: [0,0,1] };
+  // Hinge axis for the joint connecting `prevSeg` to the next segment: the
+  // normal to prevSeg's "open side" leg face (the face the next segment
+  // mates from) — cross(depth direction, open-face in-plane direction).
+  function jointHingeAxis(prevSeg) {
     var depthDir = vnorm(vsub(prevSeg.f[0], prevSeg.b[0]));
     var other = prevSeg.idx % 2 === 0 ? 2 : 1;
     var inPlaneDir = vnorm(vsub(prevSeg.f[other], prevSeg.f[0]));
-    var normalDir = vnorm(vcross(depthDir, inPlaneDir));
-    return { x: normalDir, y: inPlaneDir, z: depthDir };
+    return vnorm(vcross(depthDir, inPlaneDir));
   }
 
   // Centroid of the vertices `seg` shares with `prevSeg` — i.e. the joint
-  // face mating the two segments. Returns null if there's no previous
-  // segment or no matching vertices were found.
+  // face mating the two segments. Returns null if no matching vertices were
+  // found.
   function _jointCentroid(seg, prevSeg) {
-    if (!prevSeg) return null;
     var segV = seg.f.concat(seg.b), prevV = prevSeg.f.concat(prevSeg.b);
     var sum = [0, 0, 0], n = 0;
     segV.forEach(function (v) {
@@ -107,24 +80,21 @@ var Snake = (function () {
     return n ? [sum[0]/n, sum[1]/n, sum[2]/n] : null;
   }
 
-  // Apply seg's _xforms override (if any) to its f/b vertices in place,
-  // rotating about `frame`'s axes through the centroid of the face seg
-  // shares with `prevSeg` (the joint connecting them) — so the joint stays
-  // mated. Seg 0 (no prevSeg) rotates about its own centroid. Called
+  // Apply seg's _xforms override (if any): rotate seg's f/b by the stored
+  // angle about prevSeg's joint-hinge axis, pivoting through the centroid of
+  // the face seg shares with prevSeg — so the joint stays mated. Called
   // immediately after a segment's base geometry is computed, so that any
-  // subsequent segment derived from it (via reflection off its faces) mates
-  // to the edited geometry — edits propagate downstream.
-  function applyXform(seg, frame, prevSeg) {
-    var xf = _xforms[seg.idx];
-    if (!xf) return;
+  // subsequent segment derived from it mates to the edited geometry — edits
+  // propagate downstream.
+  function applyXform(seg, prevSeg) {
+    var deg = _xforms[seg.idx];
+    if (!deg) return;
     var center = _jointCentroid(seg, prevSeg);
-    if (!center) {
-      var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
-      all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
-      center = [px/all.length, py/all.length, pz/all.length];
-    }
-    seg.f = seg.f.map(function (v) { return _xfApply(v, xf, center, frame); });
-    seg.b = seg.b.map(function (v) { return _xfApply(v, xf, center, frame); });
+    if (!center) return;
+    var axis = jointHingeAxis(prevSeg);
+    var angle = deg * Math.PI / 180;
+    seg.f = seg.f.map(function (v) { return _rotateAround(v, center, axis, angle); });
+    seg.b = seg.b.map(function (v) { return _rotateAround(v, center, axis, angle); });
   }
 
   // ── 2D layout ──────────────────────────────────────────────────────────────
@@ -164,29 +134,6 @@ var Snake = (function () {
     return { segs: segs, px: px, py: py, fx: fx, fy: fy };
   }
 
-  // ── joint axis helpers ─────────────────────────────────────────────────────
-  // Each segment's vertex 0 is the right-angle corner of its triangular cross-
-  // section. The two "right-angle side" (leg) faces are 0-1 and 0-2, extruded
-  // front (f) to back (b). Returns the centroid of each leg face, in order
-  // [face 0-1 centroid, face 0-2 centroid].
-  function legFaceCentroids(seg) {
-    var f = seg.f, b = seg.b;
-    function avg4(p1, p2, p3, p4) {
-      return [
-        (p1[0]+p2[0]+p3[0]+p4[0]) / 4,
-        (p1[1]+p2[1]+p3[1]+p4[1]) / 4,
-        (p1[2]+p2[2]+p3[2]+p4[2]) / 4,
-      ];
-    }
-    return [
-      avg4(f[0], b[0], f[1], b[1]),
-      avg4(f[0], b[0], f[2], b[2]),
-    ];
-  }
-
-  // Point-reflect v through point p (180° inversion).
-  function _reflect(v, p) { return [2*p[0]-v[0], 2*p[1]-v[1], 2*p[2]-v[2]]; }
-
   // Rotate point v by `angle` radians around the line through point p with
   // unit-vector direction `axis` (Rodrigues' rotation formula).
   function _rotateAround(v, p, axis, angle) {
@@ -202,15 +149,16 @@ var Snake = (function () {
     return vadd(r, p);
   }
 
-  var AXIS_VEC = { x: [1,0,0], y: [0,1,0], z: [0,0,1] };
-
   // ── 3D layout ──────────────────────────────────────────────────────────────
-  // Builds joints.length + 1 segments by chaining off segment 0. For each
-  // joint i (connecting seg i -> seg i+1): the new segment is the previous
-  // segment's geometry, point-reflected through the midpoint of its "outgoing"
-  // hypotenuse edge (the b1-b2 edge). For R/L joints, the reflected segment is
-  // additionally rotated ±90° around the hinge axis (a1 or a2 leg-face axis of
-  // segment i, direction set via setSegAxes / overridden via setHinge).
+  // Builds joints.length + 1 segments by chaining off segment 0. Each new
+  // segment is the previous segment's entire geometry, 180°-rotated about the
+  // axis through the midpoint of its "open side" leg face (face 0-1 for odd
+  // segments, 0-2 for even segments), parallel to its depth direction — this
+  // alternates the hypotenuse between an upper and lower "rail" as the chain
+  // extends. For R/L joints, the result is additionally rotated ±90° around
+  // that same open-side face's normal (the joint's hinge axis), pivoting
+  // through the face's center — all derived from the previous segment's own
+  // (possibly edited) orientation, never a fixed global axis.
   function layout3D(joints) {
     var L = Math.SQRT1_2; // 1/√2 ≈ 0.707; legs = 1, hyp at Y=0.5
     var segs = [];
@@ -224,82 +172,27 @@ var Snake = (function () {
       f: [[ 0, -L/2,  0.5], [-L,  L/2,  0.5], [ L,  L/2,  0.5]],
       b: [[ 0, -L/2, -0.5], [-L,  L/2, -0.5], [ L,  L/2, -0.5]],
     });
-    applyXform(segs[0], segLocalFrame(null), null);
 
     for (var i = 1; i <= joints.length; i++) {
       var prev = segs[i-1];
-      var p = [
-        (prev.b[1][0] + prev.b[2][0]) / 2,
-        (prev.b[1][1] + prev.b[2][1]) / 2,
-        (prev.b[1][2] + prev.b[2][2]) / 2,
-      ];
-      var f = prev.b.map(function (v) { return _reflect(v, p); });
-      var b = prev.f.map(function (v) { return _reflect(v, p); });
+      var depthDir = vnorm(vsub(prev.f[0], prev.b[0]));
+      var other = prev.idx % 2 === 0 ? 2 : 1;
+      var axisPt = vmid(prev.f[0], prev.f[other]);
+      var f = prev.f.map(function (v) { return _rotateAround(v, axisPt, depthDir, Math.PI); });
+      var b = prev.b.map(function (v) { return _rotateAround(v, axisPt, depthDir, Math.PI); });
 
       var jt = joints[i-1];
       if (jt === 'R' || jt === 'L') {
-        var axCfg = _axes[i-1] || { a1: 'x', a2: 'x' };
-        var hingeKey = _hinges[i-1] || ((i-1) % 2 === 0 ? 'a2' : 'a1');
-        var dir = AXIS_VEC[axCfg[hingeKey]] || AXIS_VEC.x;
+        var inPlaneDir = vnorm(vsub(prev.f[other], prev.f[0]));
+        var hingeAxis = vnorm(vcross(depthDir, inPlaneDir));
+        var pivot = vmid(vmid(prev.f[0], prev.b[0]), vmid(prev.f[other], prev.b[other]));
         var angle = (jt === 'R' ? 1 : -1) * Math.PI / 2;
-        f = f.map(function (v) { return _rotateAround(v, p, dir, angle); });
-        b = b.map(function (v) { return _rotateAround(v, p, dir, angle); });
-      }
-
-      // Seg 1: an "S" joint shares Seg 0's Side 2 (leg face 0-2), not the
-      // hypotenuse. 180°-rotate Seg 0's entire geometry about the axis
-      // through the midpoint of that shared edge, parallel to Seg 0's own
-      // depth direction (frame-independent — follows any edits made to
-      // Seg 0's orientation), so the hypotenuses alternate between an upper
-      // and lower "rail" as more straight segments follow.
-      if (i === 1) {
-        var depthDir1 = vnorm(vsub(prev.f[0], prev.b[0]));
-        var axisPt1 = vmid(prev.f[0], prev.f[2]);
-        f = prev.f.map(function (v) { return _rotateAround(v, axisPt1, depthDir1, Math.PI); });
-        b = prev.b.map(function (v) { return _rotateAround(v, axisPt1, depthDir1, Math.PI); });
-      }
-
-      // Seg 2: repeats Seg 0's pattern, mating to Seg 1's Side 1 (leg face
-      // 0-1) — the other leg face from the one Seg 1 shares with Seg 0.
-      // 180°-rotate Seg 1's entire geometry about the axis through the
-      // midpoint of that edge, parallel to Seg 1's depth direction, which
-      // puts Seg 2's hypotenuse back on the upper rail, alternating with
-      // Seg 1's lower rail.
-      if (i === 2) {
-        var depthDir2 = vnorm(vsub(prev.f[0], prev.b[0]));
-        var axisPt2 = vmid(prev.f[0], prev.f[1]);
-        f = prev.f.map(function (v) { return _rotateAround(v, axisPt2, depthDir2, Math.PI); });
-        b = prev.b.map(function (v) { return _rotateAround(v, axisPt2, depthDir2, Math.PI); });
-      }
-
-      // Seg 3: mates to Seg 2's Side 2 (alternating back from the Side 1
-      // mate used for Seg 2), via the same 180° rotation as Seg 1. If
-      // joint 2 is an R/L turn, the result is additionally rotated ±90°
-      // around the axis normal to Seg 2's open Side 2 face, pivoting
-      // through that face's center — the joint's hinge axis, derived from
-      // Seg 2's own orientation rather than a fixed global axis.
-      if (i === 3) {
-        var depthDir3 = vnorm(vsub(prev.f[0], prev.b[0]));
-        var axisPt3 = vmid(prev.f[0], prev.f[2]);
-        f = prev.f.map(function (v) { return _rotateAround(v, axisPt3, depthDir3, Math.PI); });
-        b = prev.b.map(function (v) { return _rotateAround(v, axisPt3, depthDir3, Math.PI); });
-
-        if (jt === 'R' || jt === 'L') {
-          var pivot3 = [
-            (prev.f[0][0] + prev.b[0][0] + prev.f[2][0] + prev.b[2][0]) / 4,
-            (prev.f[0][1] + prev.b[0][1] + prev.f[2][1] + prev.b[2][1]) / 4,
-            (prev.f[0][2] + prev.b[0][2] + prev.f[2][2] + prev.b[2][2]) / 4,
-          ];
-          var inPlaneDir3 = vnorm(vsub(prev.f[2], prev.f[0]));
-          var rotAxis3 = vnorm(vcross(depthDir3, inPlaneDir3));
-          var angle3 = (jt === 'R' ? 1 : -1) * Math.PI / 2;
-          f = f.map(function (v) { return _rotateAround(v, pivot3, rotAxis3, angle3); });
-          b = b.map(function (v) { return _rotateAround(v, pivot3, rotAxis3, angle3); });
-        }
+        f = f.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
+        b = b.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
       }
 
       segs.push({ idx: i, f: f, b: b });
-      applyXform(segs[i], segLocalFrame(prev), prev);
+      applyXform(segs[i], prev);
     }
 
     return segs;
@@ -314,10 +207,5 @@ var Snake = (function () {
     clearSegTransforms: clearSegTransforms,
     setSegColor: setSegColor,
     clearSegColors: clearSegColors,
-    setSegAxes: setSegAxes,
-    getSegAxes: getSegAxes,
-    setHinge: setHinge,
-    getHinge: getHinge,
-    legFaceCentroids: legFaceCentroids,
   };
 })();
