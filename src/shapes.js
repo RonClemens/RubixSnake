@@ -24,16 +24,16 @@ var Shapes = (function () {
     },
     {
       id: 'rectangle',
-      name: 'Rectangle',
-      emoji: '🧱',
-      description: 'A flat rectangular slab — two stacked layers folded back on themselves.',
-      closing: 'Close the two ends together — they lock into a flat rectangular slab.',
-      // Pattern: L L L L R L L L L L S R repeating, truncated to 23 joints.
-      // Traces a 12-segment loop in one layer, then a mirrored 12-segment
-      // loop directly behind it — two flat layers, not a climbing staircase.
+      name: 'Picture Frame',
+      emoji: '🖼️',
+      description: 'A flat rectangular frame — a hollow loop with an open center, like a picture frame.',
+      closing: 'Close the two ends together — they lock into a flat rectangular frame with an open center.',
+      // Pattern: L S S L L S S repeating, truncated to 23 joints.
+      // Traces a flat, hollow rectangular loop (open center) rather than a
+      // filled slab — segment 0 sits at one corner of the frame.
       joints: [
-        'L','L','L','L','R','L','L','L','L','L','S','R',
-        'L','L','L','L','R','L','L','L','L','L','S',
+        'L','S','S','L','L','S','S','L','S','S','L','L',
+        'S','S','L','S','S','L','L','S','S','L','S',
       ],
     },
   ];
