@@ -37,6 +37,7 @@ var Snake = (function () {
     var len = Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
     return [a[0]/len, a[1]/len, a[2]/len];
   }
+  function vmid(a, b) { return [(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2]; }
 
   // ── segment transform overrides (used by the editor tab) ──────────────────
   var _xforms = {};
@@ -73,6 +74,20 @@ var Snake = (function () {
     c = Math.cos(xf.rz*d); s = Math.sin(xf.rz*d);
     t = x*c - y*s; y = x*s + y*c; x = t;
     return [x+px+xf.tx, y+py+xf.ty, z+pz+xf.tz];
+  }
+
+  // Apply seg's _xforms override (if any) to its f/b vertices in place, about
+  // its own centroid. Called immediately after a segment's base geometry is
+  // computed, so that any subsequent segment derived from it (via reflection
+  // off its faces) mates to the edited geometry — edits propagate downstream.
+  function applyXform(seg) {
+    var xf = _xforms[seg.idx];
+    if (!xf) return;
+    var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
+    all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
+    px/=all.length; py/=all.length; pz/=all.length;
+    seg.f = seg.f.map(function (v) { return _xfApply(v, xf, px, py, pz); });
+    seg.b = seg.b.map(function (v) { return _xfApply(v, xf, px, py, pz); });
   }
 
   // ── 2D layout ──────────────────────────────────────────────────────────────
@@ -172,6 +187,7 @@ var Snake = (function () {
       f: [[ 0, -L/2,  0.5], [-L,  L/2,  0.5], [ L,  L/2,  0.5]],
       b: [[ 0, -L/2, -0.5], [-L,  L/2, -0.5], [ L,  L/2, -0.5]],
     });
+    applyXform(segs[0]);
 
     for (var i = 1; i <= joints.length; i++) {
       var prev = segs[i-1];
@@ -194,63 +210,42 @@ var Snake = (function () {
       }
 
       // Seg 1: an "S" joint shares Seg 0's Side 2 (leg face 0-2), not the
-      // hypotenuse. Point-reflect through the midpoint of that shared edge
-      // (in X,Y; same Z range as Seg 0), so the hypotenuses alternate
-      // between an upper and lower "rail" as more straight segments follow.
+      // hypotenuse. 180°-rotate Seg 0's entire geometry about the axis
+      // through the midpoint of that shared edge, parallel to Seg 0's own
+      // depth direction (frame-independent — follows any edits made to
+      // Seg 0's orientation), so the hypotenuses alternate between an upper
+      // and lower "rail" as more straight segments follow.
       if (i === 1) {
-        var mx = (prev.f[0][0] + prev.f[2][0]) / 2;
-        var my = (prev.f[0][1] + prev.f[2][1]) / 2;
-        f = [
-          [prev.f[2][0], prev.f[2][1], prev.f[0][2]],
-          [2*mx - prev.f[1][0], 2*my - prev.f[1][1], prev.f[0][2]],
-          [prev.f[0][0], prev.f[0][1], prev.f[0][2]],
-        ];
-        b = [
-          [prev.b[2][0], prev.b[2][1], prev.b[0][2]],
-          [2*mx - prev.b[1][0], 2*my - prev.b[1][1], prev.b[0][2]],
-          [prev.b[0][0], prev.b[0][1], prev.b[0][2]],
-        ];
+        var depthDir1 = vnorm(vsub(prev.f[0], prev.b[0]));
+        var axisPt1 = vmid(prev.f[0], prev.f[2]);
+        f = prev.f.map(function (v) { return _rotateAround(v, axisPt1, depthDir1, Math.PI); });
+        b = prev.b.map(function (v) { return _rotateAround(v, axisPt1, depthDir1, Math.PI); });
       }
 
       // Seg 2: repeats Seg 0's pattern, mating to Seg 1's Side 1 (leg face
       // 0-1) — the other leg face from the one Seg 1 shares with Seg 0.
-      // Point-reflect through the midpoint of that edge (in X,Y; same Z
-      // range), which puts Seg 2's hypotenuse back on the upper rail,
-      // alternating with Seg 1's lower rail.
+      // 180°-rotate Seg 1's entire geometry about the axis through the
+      // midpoint of that edge, parallel to Seg 1's depth direction, which
+      // puts Seg 2's hypotenuse back on the upper rail, alternating with
+      // Seg 1's lower rail.
       if (i === 2) {
-        var mx2 = (prev.f[0][0] + prev.f[1][0]) / 2;
-        var my2 = (prev.f[0][1] + prev.f[1][1]) / 2;
-        f = [
-          [prev.f[1][0], prev.f[1][1], prev.f[0][2]],
-          [prev.f[0][0], prev.f[0][1], prev.f[0][2]],
-          [2*mx2 - prev.f[2][0], 2*my2 - prev.f[2][1], prev.f[0][2]],
-        ];
-        b = [
-          [prev.b[1][0], prev.b[1][1], prev.b[0][2]],
-          [prev.b[0][0], prev.b[0][1], prev.b[0][2]],
-          [2*mx2 - prev.b[2][0], 2*my2 - prev.b[2][1], prev.b[0][2]],
-        ];
+        var depthDir2 = vnorm(vsub(prev.f[0], prev.b[0]));
+        var axisPt2 = vmid(prev.f[0], prev.f[1]);
+        f = prev.f.map(function (v) { return _rotateAround(v, axisPt2, depthDir2, Math.PI); });
+        b = prev.b.map(function (v) { return _rotateAround(v, axisPt2, depthDir2, Math.PI); });
       }
 
       // Seg 3: mates to Seg 2's Side 2 (alternating back from the Side 1
-      // mate used for Seg 2), via the same point-reflection as Seg 1. If
+      // mate used for Seg 2), via the same 180° rotation as Seg 1. If
       // joint 2 is an R/L turn, the result is additionally rotated ±90°
       // around the axis normal to Seg 2's open Side 2 face, pivoting
       // through that face's center — the joint's hinge axis, derived from
       // Seg 2's own orientation rather than a fixed global axis.
       if (i === 3) {
-        var mx3 = (prev.f[0][0] + prev.f[2][0]) / 2;
-        var my3 = (prev.f[0][1] + prev.f[2][1]) / 2;
-        f = [
-          [prev.f[2][0], prev.f[2][1], prev.f[0][2]],
-          [2*mx3 - prev.f[1][0], 2*my3 - prev.f[1][1], prev.f[0][2]],
-          [prev.f[0][0], prev.f[0][1], prev.f[0][2]],
-        ];
-        b = [
-          [prev.b[2][0], prev.b[2][1], prev.b[0][2]],
-          [2*mx3 - prev.b[1][0], 2*my3 - prev.b[1][1], prev.b[0][2]],
-          [prev.b[0][0], prev.b[0][1], prev.b[0][2]],
-        ];
+        var depthDir3 = vnorm(vsub(prev.f[0], prev.b[0]));
+        var axisPt3 = vmid(prev.f[0], prev.f[2]);
+        f = prev.f.map(function (v) { return _rotateAround(v, axisPt3, depthDir3, Math.PI); });
+        b = prev.b.map(function (v) { return _rotateAround(v, axisPt3, depthDir3, Math.PI); });
 
         if (jt === 'R' || jt === 'L') {
           var pivot3 = [
@@ -258,7 +253,6 @@ var Snake = (function () {
             (prev.f[0][1] + prev.b[0][1] + prev.f[2][1] + prev.b[2][1]) / 4,
             (prev.f[0][2] + prev.b[0][2] + prev.f[2][2] + prev.b[2][2]) / 4,
           ];
-          var depthDir3 = vnorm(vsub(prev.f[0], prev.b[0]));
           var inPlaneDir3 = vnorm(vsub(prev.f[2], prev.f[0]));
           var rotAxis3 = vnorm(vcross(depthDir3, inPlaneDir3));
           var angle3 = (jt === 'R' ? 1 : -1) * Math.PI / 2;
@@ -268,17 +262,9 @@ var Snake = (function () {
       }
 
       segs.push({ idx: i, f: f, b: b });
+      applyXform(segs[i]);
     }
 
-    segs.forEach(function (seg) {
-      var xf = _xforms[seg.idx];
-      if (!xf) return;
-      var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
-      all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
-      px/=all.length; py/=all.length; pz/=all.length;
-      seg.f = seg.f.map(function (v) { return _xfApply(v, xf, px, py, pz); });
-      seg.b = seg.b.map(function (v) { return _xfApply(v, xf, px, py, pz); });
-    });
     return segs;
   }
 
