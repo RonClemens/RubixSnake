@@ -90,18 +90,39 @@ var Snake = (function () {
     return { x: normalDir, y: inPlaneDir, z: depthDir };
   }
 
-  // Apply seg's _xforms override (if any) to its f/b vertices in place, about
-  // its own centroid, rotating about `frame`'s axes. Called immediately after
-  // a segment's base geometry is computed, so that any subsequent segment
-  // derived from it (via reflection off its faces) mates to the edited
-  // geometry — edits propagate downstream.
-  function applyXform(seg, frame) {
+  // Centroid of the vertices `seg` shares with `prevSeg` — i.e. the joint
+  // face mating the two segments. Returns null if there's no previous
+  // segment or no matching vertices were found.
+  function _jointCentroid(seg, prevSeg) {
+    if (!prevSeg) return null;
+    var segV = seg.f.concat(seg.b), prevV = prevSeg.f.concat(prevSeg.b);
+    var sum = [0, 0, 0], n = 0;
+    segV.forEach(function (v) {
+      prevV.forEach(function (p) {
+        if (Math.abs(v[0]-p[0]) < 1e-9 && Math.abs(v[1]-p[1]) < 1e-9 && Math.abs(v[2]-p[2]) < 1e-9) {
+          sum[0]+=v[0]; sum[1]+=v[1]; sum[2]+=v[2]; n++;
+        }
+      });
+    });
+    return n ? [sum[0]/n, sum[1]/n, sum[2]/n] : null;
+  }
+
+  // Apply seg's _xforms override (if any) to its f/b vertices in place,
+  // rotating about `frame`'s axes through the centroid of the face seg
+  // shares with `prevSeg` (the joint connecting them) — so the joint stays
+  // mated. Seg 0 (no prevSeg) rotates about its own centroid. Called
+  // immediately after a segment's base geometry is computed, so that any
+  // subsequent segment derived from it (via reflection off its faces) mates
+  // to the edited geometry — edits propagate downstream.
+  function applyXform(seg, frame, prevSeg) {
     var xf = _xforms[seg.idx];
     if (!xf) return;
-    var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
-    all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
-    px/=all.length; py/=all.length; pz/=all.length;
-    var center = [px, py, pz];
+    var center = _jointCentroid(seg, prevSeg);
+    if (!center) {
+      var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
+      all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
+      center = [px/all.length, py/all.length, pz/all.length];
+    }
     seg.f = seg.f.map(function (v) { return _xfApply(v, xf, center, frame); });
     seg.b = seg.b.map(function (v) { return _xfApply(v, xf, center, frame); });
   }
@@ -203,7 +224,7 @@ var Snake = (function () {
       f: [[ 0, -L/2,  0.5], [-L,  L/2,  0.5], [ L,  L/2,  0.5]],
       b: [[ 0, -L/2, -0.5], [-L,  L/2, -0.5], [ L,  L/2, -0.5]],
     });
-    applyXform(segs[0], segLocalFrame(null));
+    applyXform(segs[0], segLocalFrame(null), null);
 
     for (var i = 1; i <= joints.length; i++) {
       var prev = segs[i-1];
@@ -278,7 +299,7 @@ var Snake = (function () {
       }
 
       segs.push({ idx: i, f: f, b: b });
-      applyXform(segs[i], segLocalFrame(prev));
+      applyXform(segs[i], segLocalFrame(prev), prev);
     }
 
     return segs;
