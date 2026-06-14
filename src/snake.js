@@ -63,31 +63,47 @@ var Snake = (function () {
   function setHinge(jointIdx, key) { _hinges[jointIdx] = key; }
   function getHinge(jointIdx) { return _hinges[jointIdx] || null; }
 
-  // Rotate v around centroid (px,py,pz) using XYZ Euler (right-hand rule), then translate.
-  function _xfApply(v, xf, px, py, pz) {
+  // Rotate v around `center` by xf.rx/ry/rz (degrees), each about its own
+  // fixed axis taken from `frame` (frame.x/y/z — unit vectors derived from
+  // the previous segment's local orientation; see segLocalFrame).
+  function _xfApply(v, xf, center, frame) {
     var d = Math.PI / 180;
-    var x = v[0]-px, y = v[1]-py, z = v[2]-pz, c, s, t;
-    c = Math.cos(xf.rx*d); s = Math.sin(xf.rx*d);
-    t = y*c - z*s; z = y*s + z*c; y = t;
-    c = Math.cos(xf.ry*d); s = Math.sin(xf.ry*d);
-    t = x*c + z*s; z = -x*s + z*c; x = t;
-    c = Math.cos(xf.rz*d); s = Math.sin(xf.rz*d);
-    t = x*c - y*s; y = x*s + y*c; x = t;
-    return [x+px+xf.tx, y+py+xf.ty, z+pz+xf.tz];
+    var p = v;
+    if (xf.rx) p = _rotateAround(p, center, frame.x, xf.rx * d);
+    if (xf.ry) p = _rotateAround(p, center, frame.y, xf.ry * d);
+    if (xf.rz) p = _rotateAround(p, center, frame.z, xf.rz * d);
+    return p;
+  }
+
+  // Local rotation frame for a segment's editor controls, derived from the
+  // PREVIOUS segment's current (post-edit) orientation: z = its depth
+  // direction (f0->b0), y = the in-plane direction of its "open side" leg
+  // face (the face this segment was mated from), x = the normal to that
+  // face (cross(z, y) — the joint's hinge/"red" axis). Seg 0 has no
+  // previous segment, so it uses the fixed global axes.
+  function segLocalFrame(prevSeg) {
+    if (!prevSeg) return { x: [1,0,0], y: [0,1,0], z: [0,0,1] };
+    var depthDir = vnorm(vsub(prevSeg.f[0], prevSeg.b[0]));
+    var other = prevSeg.idx % 2 === 0 ? 2 : 1;
+    var inPlaneDir = vnorm(vsub(prevSeg.f[other], prevSeg.f[0]));
+    var normalDir = vnorm(vcross(depthDir, inPlaneDir));
+    return { x: normalDir, y: inPlaneDir, z: depthDir };
   }
 
   // Apply seg's _xforms override (if any) to its f/b vertices in place, about
-  // its own centroid. Called immediately after a segment's base geometry is
-  // computed, so that any subsequent segment derived from it (via reflection
-  // off its faces) mates to the edited geometry — edits propagate downstream.
-  function applyXform(seg) {
+  // its own centroid, rotating about `frame`'s axes. Called immediately after
+  // a segment's base geometry is computed, so that any subsequent segment
+  // derived from it (via reflection off its faces) mates to the edited
+  // geometry — edits propagate downstream.
+  function applyXform(seg, frame) {
     var xf = _xforms[seg.idx];
     if (!xf) return;
     var all = seg.f.concat(seg.b), px=0, py=0, pz=0;
     all.forEach(function (v) { px+=v[0]; py+=v[1]; pz+=v[2]; });
     px/=all.length; py/=all.length; pz/=all.length;
-    seg.f = seg.f.map(function (v) { return _xfApply(v, xf, px, py, pz); });
-    seg.b = seg.b.map(function (v) { return _xfApply(v, xf, px, py, pz); });
+    var center = [px, py, pz];
+    seg.f = seg.f.map(function (v) { return _xfApply(v, xf, center, frame); });
+    seg.b = seg.b.map(function (v) { return _xfApply(v, xf, center, frame); });
   }
 
   // ── 2D layout ──────────────────────────────────────────────────────────────
@@ -187,7 +203,7 @@ var Snake = (function () {
       f: [[ 0, -L/2,  0.5], [-L,  L/2,  0.5], [ L,  L/2,  0.5]],
       b: [[ 0, -L/2, -0.5], [-L,  L/2, -0.5], [ L,  L/2, -0.5]],
     });
-    applyXform(segs[0]);
+    applyXform(segs[0], segLocalFrame(null));
 
     for (var i = 1; i <= joints.length; i++) {
       var prev = segs[i-1];
@@ -262,7 +278,7 @@ var Snake = (function () {
       }
 
       segs.push({ idx: i, f: f, b: b });
-      applyXform(segs[i]);
+      applyXform(segs[i], segLocalFrame(prev));
     }
 
     return segs;
