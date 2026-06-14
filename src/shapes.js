@@ -28,12 +28,13 @@ var Shapes = (function () {
       emoji: '🖼️',
       description: 'A flat rectangular frame — a hollow loop with an open center, like a picture frame.',
       closing: 'Close the two ends together — they lock into a flat rectangular frame with an open center.',
-      // Pattern: L S S L L S S repeating, truncated to 23 joints.
-      // Traces a flat, hollow rectangular loop (open center) rather than a
-      // filled slab — segment 0 sits at one corner of the frame.
+      // Pattern: 7 straight, then LL, 3 straight, then LR, 5 straight,
+      // then RR, 2 straight (23 joints, 6 turns total).
+      // Traces a flat, hollow rectangular loop (open center) with no
+      // segment overlaps — segment 0 sits at one corner of the frame.
       joints: [
-        'L','S','S','L','L','S','S','L','S','S','L','L',
-        'S','S','L','S','S','L','L','S','S','L','S',
+        'S','S','S','S','S','S','S','L','L','S','S','S','L','R',
+        'S','S','S','S','S','R','R','S','S',
       ],
     },
   ];
