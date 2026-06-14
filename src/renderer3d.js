@@ -3,7 +3,7 @@
 
 var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], axesHelper = null, axesLabels = [], animFrame = null;
-  var highlightMesh = null;
+  var highlightMesh = null, glowMesh = null;
   var spherical = { theta: Math.PI, phi: Math.PI / 2, r: 4 };
   var orbitCenter = new THREE.Vector3();
 
@@ -106,6 +106,12 @@ var Renderer3D = (function () {
       highlightMesh.material.dispose();
       highlightMesh = null;
     }
+    if (glowMesh) {
+      scene.remove(glowMesh);
+      glowMesh.geometry.dispose();
+      glowMesh.material.dispose();
+      glowMesh = null;
+    }
 
     var ghosting = focusMode === 'segment' && typeof highlightIdx === 'number';
 
@@ -128,8 +134,6 @@ var Renderer3D = (function () {
         color: new THREE.Color(Snake.segColor(seg.idx).h),
         shininess: 60,
         flatShading: true,
-        emissive: isHighlighted ? 0xffaa00 : 0x000000,
-        emissiveIntensity: 0.5,
         transparent: ghost,
         opacity: ghost ? 0.15 : 1,
         depthWrite: !ghost,
@@ -141,10 +145,29 @@ var Renderer3D = (function () {
       if (isHighlighted) {
         highlightMesh = new THREE.LineSegments(
           new THREE.EdgesGeometry(geo),
-          new THREE.LineBasicMaterial({ color: 0xffd60a })
+          new THREE.LineBasicMaterial({ color: 0x39ff14 })
         );
         highlightMesh.renderOrder = 998;
         scene.add(highlightMesh);
+
+        var center = new THREE.Vector3();
+        for (var vi = 0; vi < v.length; vi += 3) {
+          center.x += v[vi]; center.y += v[vi + 1]; center.z += v[vi + 2];
+        }
+        center.divideScalar(v.length / 3);
+
+        var glowScale = 1.08;
+        glowMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+          color: 0x39ff14,
+          transparent: true,
+          opacity: 0.25,
+          side: THREE.BackSide,
+          depthWrite: false,
+        }));
+        glowMesh.position.copy(center).multiplyScalar(1 - glowScale);
+        glowMesh.scale.setScalar(glowScale);
+        glowMesh.renderOrder = 997;
+        scene.add(glowMesh);
       }
     });
 

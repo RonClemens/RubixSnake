@@ -416,10 +416,13 @@
         '<div id="editor-3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
       '</div>' +
       '<div class="card">' +
-        '<div class="lbl">Segment</div>' +
+        '<div class="lbl" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+          '<span>Segment</span>' +
+          (edSeg === null ? '' : '<button id="ed-unselect" style="padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:11px">View Full Snake</button>') +
+        '</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + segBtns + '</div>' +
       '</div>' +
-      (edSeg === 0 ? '' :
+      ((edSeg === 0 || edSeg === null) ? '' :
       '<div class="card">' +
         '<div class="lbl" id="ed-xf-hdr">Rotate — Seg ' + edSeg + ' (' + Snake.segColor(edSeg).n + ')</div>' +
         rotRow(xf) +
@@ -435,6 +438,14 @@
         renderEditor();
       };
     });
+
+    // Unselect — view full snake without ghosting
+    var edUnselectBtn = document.getElementById('ed-unselect');
+    if (edUnselectBtn) edUnselectBtn.onclick = function () {
+      edSeg = null;
+      edFocusAll = true;
+      renderEditor();
+    };
 
     // Add segment — pick a color for the next segment in the chain
     pg.querySelectorAll('[data-addcolor]').forEach(function (btn) {
@@ -459,7 +470,8 @@
         Snake.setSegTransform(edSeg, next);
         var val = document.getElementById('ed-rot-val');
         if (val) val.textContent = next + '°';
-        Renderer3D.update(subJoints, { highlight: edSeg, focus: edFocusAll ? 'all' : 'segment' });
+        edFocusAll = true;
+        Renderer3D.update(subJoints, { highlight: edSeg, focus: 'all' });
       };
     });
 
@@ -468,6 +480,7 @@
       delete edXf[edSeg];
       Snake.clearSegTransforms();
       Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
+      edFocusAll = true;
       renderEditor();
     };
 
