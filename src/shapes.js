@@ -21,6 +21,19 @@ var Shapes = (function () {
         'S','L',
       ],
     },
+    {
+      id: 'rectangle',
+      name: 'Rectangle',
+      emoji: '🧱',
+      description: 'A flat rectangular slab — repeats Straight-Straight-Straight, Right-Right-Right.',
+      // Pattern: S S S R R R repeating × 4, minus the last R (23 joints total)
+      joints: [
+        'S','S','S','R','R','R',
+        'S','S','S','R','R','R',
+        'S','S','S','R','R','R',
+        'S','S','S','R','R',
+      ],
+    },
   ];
 
   function getAll() { return library; }

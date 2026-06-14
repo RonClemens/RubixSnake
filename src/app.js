@@ -25,6 +25,7 @@
   var edXf  = {};              // per-segment rotation overrides { id: degrees }
   var edFocusAll = true;       // 3D camera: true = fit whole snake, false = zoom to edSeg
   var edRevealCount = 2;       // how many segments are revealed/built in the editor
+  var engStep = 23;            // fold-by-fold step shown in Engine 3D/2D preview (0-23)
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
@@ -332,9 +333,31 @@
   }
 
   // ── ENGINE TAB ────────────────────────────────────────────────────────────
+  function engineStepInfo(joints) {
+    if (engStep < 1) {
+      return '<div style="font-size:12px;color:#6e7681;margin-top:10px;text-align:center">Start of snake — segment 0 only</div>';
+    }
+    var t = joints[engStep - 1], tc = UI[t].col, tbg = UI[t].bg;
+    var ai = engStep - 1, bi = engStep;
+    return '<div style="border:1.5px solid ' + tc + '44;background:' + tbg + ';border-radius:10px;padding:10px;margin-top:10px">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+          '<div style="width:36px;height:36px;border-radius:8px;background:' + tc + '20;border:2px solid ' + tc + ';display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' + UI[t].em + '</div>' +
+          '<div>' +
+            '<div style="font-size:14px;font-weight:800;color:' + tc + '">Joint ' + engStep + '/23 — ' + UI[t].lbl + '</div>' +
+            '<div style="font-size:11px;color:#6e7681;margin-top:1px">' + Snake.segColor(ai).n + ' → ' + Snake.segColor(bi).n + ' · ' + (pl(engStep) === 'vertical' ? '↕ Vertical' : '↔ Horizontal') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:8px 4px">' + svgDiag(t, engStep, ai, bi) + '</div>' +
+        '<div style="background:rgba(0,0,0,.25);border-radius:7px;padding:9px 12px;margin-top:8px;font-size:13px;font-weight:700;color:' + tc + '">' + dirtxt(t, engStep) + '</div>' +
+      '</div>';
+  }
+
   function renderEngine() {
     document.getElementById('navrow').style.display = 'none';
     var pg = document.getElementById('pg');
+    var startJoints = activeShape ? activeShape.joints.slice() : Array(23).fill('S');
+    var joints = MovesEngine.getJoints() || startJoints;
+
     pg.innerHTML =
       '<div class="card">' +
         '<div class="lbl">Moves Engine — build a new shape</div>' +
@@ -346,28 +369,45 @@
         '<canvas id="ec" style="width:100%;background:#0d1117;border-radius:6px"></canvas>' +
       '</div>' +
       '<div class="card" style="padding:10px">' +
-        '<div class="lbl">3D preview — drag to rotate</div>' +
-        '<div id="view3d"></div>' +
+        '<div class="lbl">Fold-by-fold 3D preview — drag to rotate</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
+          '<button id="eng-prev" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9664;</button>' +
+          '<input id="eng-slider" type="range" min="0" max="23" step="1" value="' + engStep + '" style="flex:1">' +
+          '<button id="eng-next" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9654;</button>' +
+        '</div>' +
+        '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700;margin-bottom:8px">Step ' + engStep + ' / 23</div>' +
+        '<div id="view3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
+        '<div id="eng-step-info">' + engineStepInfo(joints) + '</div>' +
       '</div>';
 
-    var startJoints = activeShape ? activeShape.joints.slice() : Array(23).fill('S');
+    function refreshViews(j) {
+      var cv = document.getElementById('ec');
+      if (cv) Renderer2D.draw(cv, j, engStep >= 1 ? engStep : null);
+      var v3 = document.getElementById('view3d');
+      if (v3) { Renderer3D.init(v3); Renderer3D.update(j.slice(0, engStep)); }
+      var info = document.getElementById('eng-step-info');
+      if (info) info.innerHTML = engineStepInfo(j);
+    }
 
-    MovesEngine.init(document.getElementById('me-container'), startJoints, function (joints) {
-      setTimeout(function () {
-        var cv = document.getElementById('ec');
-        if (cv) Renderer2D.draw(cv, joints, null);
-        var v3 = document.getElementById('view3d');
-        if (v3) { Renderer3D.init(v3); Renderer3D.update(joints); }
-      }, 20);
+    function setStep(s) {
+      engStep = Math.max(0, Math.min(23, s));
+      var slider = document.getElementById('eng-slider');
+      if (slider) slider.value = engStep;
+      var lbl = document.getElementById('eng-step-lbl');
+      if (lbl) lbl.textContent = 'Step ' + engStep + ' / 23';
+      refreshViews(MovesEngine.getJoints() || startJoints);
+    }
+
+    MovesEngine.init(document.getElementById('me-container'), startJoints, function (j) {
+      setTimeout(function () { refreshViews(j); }, 20);
     });
 
+    document.getElementById('eng-prev').onclick = function () { setStep(engStep - 1); };
+    document.getElementById('eng-next').onclick = function () { setStep(engStep + 1); };
+    document.getElementById('eng-slider').oninput = function () { setStep(+this.value); };
+
     // trigger initial draw
-    setTimeout(function () {
-      var cv = document.getElementById('ec');
-      if (cv) Renderer2D.draw(cv, startJoints, null);
-      var v3 = document.getElementById('view3d');
-      if (v3) { Renderer3D.init(v3); Renderer3D.update(startJoints); }
-    }, 50);
+    setTimeout(function () { refreshViews(MovesEngine.getJoints() || startJoints); }, 50);
   }
 
   // ── EDITOR TAB ────────────────────────────────────────────────────────────
