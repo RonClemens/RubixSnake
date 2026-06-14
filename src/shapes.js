@@ -9,6 +9,7 @@ var Shapes = (function () {
       name: 'Cube',
       emoji: '🎲',
       description: 'Classic 2×2×2 cube — the most iconic Rubik\'s Snake shape.',
+      closing: 'Close the two ends together — they lock into a cube.',
       // Pattern: S R R S L L repeating × 4, minus the last L (23 joints total)
       joints: [
         'S','R','R',
@@ -25,13 +26,14 @@ var Shapes = (function () {
       id: 'rectangle',
       name: 'Rectangle',
       emoji: '🧱',
-      description: 'A flat rectangular slab — repeats Straight-Straight-Straight, Right-Right-Right.',
-      // Pattern: S S S R R R repeating × 4, minus the last R (23 joints total)
+      description: 'A flat rectangular slab — two stacked layers folded back on themselves.',
+      closing: 'Close the two ends together — they lock into a flat rectangular slab.',
+      // Pattern: L L L L R L L L L L S R repeating, truncated to 23 joints.
+      // Traces a 12-segment loop in one layer, then a mirrored 12-segment
+      // loop directly behind it — two flat layers, not a climbing staircase.
       joints: [
-        'S','S','S','R','R','R',
-        'S','S','S','R','R','R',
-        'S','S','S','R','R','R',
-        'S','S','S','R','R',
+        'L','L','L','L','R','L','L','L','L','L','S','R',
+        'L','L','L','L','R','L','L','L','L','L','S',
       ],
     },
   ];

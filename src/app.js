@@ -232,16 +232,19 @@
 
     // DONE
     if (guideStep === 24) {
+      var doneEmoji = activeShape ? activeShape.emoji : '🎉';
+      var doneClosing = activeShape && activeShape.closing ? activeShape.closing : 'Close the two ends together to lock the shape.';
       pg.innerHTML =
         '<div style="text-align:center;padding:22px 16px 8px;display:flex;flex-direction:column;gap:12px;align-items:center">' +
-          '<div style="font-size:64px">🎲</div>' +
+          '<div style="font-size:64px">' + doneEmoji + '</div>' +
           '<div style="font-size:22px;font-weight:800">All 23 joints done!</div>' +
+          (activeShape ? '<div style="font-size:14px;color:#8b949e">Your snake should now form a <b style="color:#fff">' + activeShape.name + '</b>.</div>' : '') +
         '</div>' +
         '<div class="card" style="padding:10px">' +
           '<div class="lbl">Final shape — 3D (drag to rotate)</div>' +
           '<div id="done-3d" style="width:100%;height:280px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
         '</div>' +
-        '<div class="card"><p style="font-size:14px;color:#c9d1d9;line-height:1.6">Close the two ends together — they lock into a cube.<br><br><b style="color:#f0883e">Doesn\'t fit?</b> Mirror all R↔L from joint 1 — some snakes have opposite chirality.</p></div>' +
+        '<div class="card"><p style="font-size:14px;color:#c9d1d9;line-height:1.6">' + doneClosing + '<br><br><b style="color:#f0883e">Doesn\'t fit?</b> Mirror all R↔L from joint 1 — some snakes have opposite chirality.</p></div>' +
         '<button id="brst" style="padding:14px;background:#238636;border-radius:12px;font-size:15px;font-weight:700;color:#fff;width:100%">↺ Start Over</button>';
       document.getElementById('brst').onclick = function () { guideStep = 0; clearPhoto(); render(); };
       setTimeout(function () {
