@@ -44,9 +44,56 @@
     document.getElementById('tab-engine').onclick = function () { switchTab('engine'); };
     document.getElementById('tab-editor').onclick = function () { switchTab('editor'); };
 
+    loadCustomShapes();
+
     // load cube by default
     activeShape = Shapes.getById('cube');
     render();
+  }
+
+  // ── custom shape import ──────────────────────────────────────────────────
+  var JOINT_TYPES = ['S', 'R', 'L', 'F'];
+
+  function loadCustomShapes() {
+    var raw = localStorage.getItem('customShapes');
+    if (!raw) return;
+    try {
+      JSON.parse(raw).forEach(function (s) { Shapes.add(s); });
+    } catch (e) { /* ignore corrupt storage */ }
+  }
+
+  function saveCustomShapes() {
+    var raw = localStorage.getItem('customShapes');
+    var list = [];
+    try { list = raw ? JSON.parse(raw) : []; } catch (e) { list = []; }
+    return list;
+  }
+
+  // Accepts either a bare 23-element joints array, or a full shape object
+  // { name, emoji, description, closing, joints }. Returns an error string,
+  // or null on success.
+  function importShape(text, name) {
+    var parsed;
+    try { parsed = JSON.parse(text); } catch (e) { return 'Invalid JSON: ' + e.message; }
+    var joints = Array.isArray(parsed) ? parsed : parsed.joints;
+    if (!Array.isArray(joints) || joints.length !== 23) return 'joints must be an array of 23 S/R/L/F values';
+    for (var i = 0; i < joints.length; i++) {
+      if (JOINT_TYPES.indexOf(joints[i]) < 0) return 'joint ' + (i+1) + ' is "' + joints[i] + '" — must be S, R, L, or F';
+    }
+    var meta = Array.isArray(parsed) ? {} : parsed;
+    var shape = {
+      id: 'custom-' + Date.now(),
+      name: (name || meta.name || 'Custom Shape'),
+      emoji: meta.emoji || '✨',
+      description: meta.description || 'A custom imported shape.',
+      closing: meta.closing || 'Close the two ends together to lock the shape.',
+      joints: joints.slice(),
+    };
+    Shapes.add(shape);
+    var list = saveCustomShapes();
+    list.push(shape);
+    localStorage.setItem('customShapes', JSON.stringify(list));
+    return null;
   }
 
   function switchTab(t) {
@@ -244,12 +291,31 @@
           '<p style="color:#8b949e;font-size:13px;line-height:1.55">Step-by-step folding instructions with 2D path view, fold diagrams, and AI photo verification.</p>' +
         '</div>' +
         '<div class="card"><div class="lbl">Choose a shape</div>' + shapeList + '</div>' +
-        '<button id="bstart" style="padding:15px;background:#238636;border-radius:12px;font-size:16px;font-weight:700;color:#fff;width:100%">Start → Joint 1</button>';
+        '<button id="bstart" style="padding:15px;background:#238636;border-radius:12px;font-size:16px;font-weight:700;color:#fff;width:100%">Start → Joint 1</button>' +
+        '<div class="card">' +
+          '<div class="lbl">Import shape (JSON)</div>' +
+          '<p style="color:#6e7681;font-size:11px;margin-bottom:8px">Paste a 23-element joints array (e.g. from the Engine or Editor "Copy JSON" buttons), or a full shape object with name/emoji/description/joints.</p>' +
+          '<input id="imp-name" placeholder="Name (optional)" style="width:100%;padding:9px;margin-bottom:8px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#fff;font-size:12px">' +
+          '<textarea id="imp-json" rows="3" placeholder=\'["S","S","S",...]\' style="width:100%;padding:9px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:11px;font-family:monospace;resize:vertical"></textarea>' +
+          '<div id="imp-err" style="color:#f85149;font-size:11px;margin-top:6px"></div>' +
+          '<button id="imp-btn" style="margin-top:8px;width:100%;padding:10px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:13px;font-weight:700">Import Shape</button>' +
+        '</div>';
 
       pg.querySelectorAll('[data-sid]').forEach(function (btn) {
         btn.onclick = function () { activeShape = Shapes.getById(this.getAttribute('data-sid')); render(); };
       });
       document.getElementById('bstart').onclick = function () { guideStep = 1; clearPhoto(); render(); };
+      document.getElementById('imp-btn').onclick = function () {
+        var text = document.getElementById('imp-json').value.trim();
+        var name = document.getElementById('imp-name').value.trim();
+        var err = document.getElementById('imp-err');
+        if (!text) { err.textContent = 'Paste a joints array or shape JSON first.'; return; }
+        var msg = importShape(text, name);
+        if (msg) { err.textContent = msg; return; }
+        err.textContent = '';
+        activeShape = Shapes.getAll()[Shapes.getAll().length - 1];
+        render();
+      };
       return;
     }
 
