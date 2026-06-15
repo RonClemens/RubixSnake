@@ -81,6 +81,25 @@
     return { id: guideStep, t: activeShape.joints[guideStep - 1] };
   }
 
+  // Translate the editor's per-segment rotation overrides (edXf, in degrees)
+  // back into a joint-type array. An edXf rotation of `deg` on segment i is
+  // the same hinge-axis/pivot rotation a joint applies, so it composes with
+  // joint i-1's existing angle (S=0, R=90, F=180, L=270) to give a new type.
+  var JOINT_ANGLE = { S: 0, R: 90, F: 180, L: 270 };
+  var ANGLE_JOINT = { 0: 'S', 90: 'R', 180: 'F', 270: 'L' };
+  function editedJoints() {
+    var joints = (activeShape ? activeShape.joints : Array(23).fill('S')).slice();
+    Object.keys(edXf).forEach(function (segId) {
+      var i = +segId, ji = i - 1;
+      if (ji < 0 || ji >= joints.length) return;
+      var deg = edXf[segId] || 0;
+      if (!deg) return;
+      var newAngle = (((JOINT_ANGLE[joints[ji]] || 0) + deg) % 360 + 360) % 360;
+      joints[ji] = ANGLE_JOINT[newAngle] || joints[ji];
+    });
+    return joints;
+  }
+
   // ── file handling ──────────────────────────────────────────────────────────
   function onFile(f) {
     if (!f) return;
@@ -475,7 +494,17 @@
         rotRow(xf) +
         '<button id="ed-reset" style="margin-top:6px;padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12px">Reset Seg ' + edSeg + '</button>' +
       '</div>') +
-      addCardH;
+      addCardH +
+      '<div class="card">' +
+        '<div class="lbl">Joint sequence (with rotations applied)</div>' +
+        '<div id="ed-seq" style="font-size:11px;font-family:monospace;color:#58a6ff;background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:8px;line-height:1.8;word-break:break-all;margin-bottom:8px">' +
+          editedJoints().map(function (t) {
+            var u = { S: '#58a6ff', R: '#f0883e', L: '#3fb950', F: '#a371f7' };
+            return '<span style="color:' + u[t] + '">' + t + '</span>';
+          }).join(' ') +
+        '</div>' +
+        '<button id="ed-copy" style="width:100%;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:12px;font-weight:700">&#128203; Copy JSON</button>' +
+      '</div>';
 
     // Segment selector
     pg.querySelectorAll('[data-edid]').forEach(function (btn) {
@@ -519,6 +548,7 @@
         if (val) val.textContent = next + '°';
         edFocusAll = true;
         Renderer3D.update(subJoints, { highlight: edSeg, focus: 'all' });
+        updateSeqReadout();
       };
     });
 
@@ -529,6 +559,28 @@
       Object.keys(edXf).forEach(function (id) { Snake.setSegTransform(+id, edXf[id]); });
       edFocusAll = true;
       renderEditor();
+    };
+
+    // joint-sequence readout + Copy JSON
+    function updateSeqReadout() {
+      var seq = document.getElementById('ed-seq');
+      if (!seq) return;
+      var u = { S: '#58a6ff', R: '#f0883e', L: '#3fb950', F: '#a371f7' };
+      seq.innerHTML = editedJoints().map(function (t) {
+        return '<span style="color:' + u[t] + '">' + t + '</span>';
+      }).join(' ');
+    }
+    var edCopyBtn = document.getElementById('ed-copy');
+    if (edCopyBtn) edCopyBtn.onclick = function () {
+      var json = JSON.stringify(editedJoints());
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(json).then(function () {
+          edCopyBtn.textContent = '✓ Copied!';
+          setTimeout(function () { edCopyBtn.innerHTML = '&#128203; Copy JSON'; }, 1500);
+        });
+      } else {
+        edCopyBtn.textContent = json;
+      }
     };
 
     // 3D init + wire editor callbacks
