@@ -26,16 +26,18 @@ var Shapes = (function () {
       id: 'rectangle',
       name: 'Picture Frame',
       emoji: '🖼️',
-      description: 'A flat rectangular frame — a hollow loop with an open center, like a picture frame.',
+      description: 'A flat, symmetric rectangular frame — a hollow loop with an open center, like a picture frame.',
       closing: 'Close the two ends together — they lock into a flat rectangular frame with an open center.',
-      // Pattern: four 180° "flip" joints (F), each a clean 90° corner that
+      // Pattern: three 180° "flip" joints (F), each a clean 90° corner that
       // stays perfectly flat (unlike R/L pairs, which tilt out of plane).
-      // Gaps of 6, 4, 4, 3, 2 straight segments between/around the corners
-      // trace a flat, hollow rectangular loop with no segment overlaps —
-      // segment 0 sits at the top-left corner of the frame.
+      // Runs of 6, 4, 6, 4 straight segments between the corners give four
+      // legs of 7, 5, 7, 5 segments — a symmetric rectangle (opposite sides
+      // equal) with no overlaps. The 4th corner needs no joint: the chain's
+      // built-in alternation makes it turn 90° on its own, landing segment 23
+      // back next to segment 0 to close the loop.
       joints: [
         'S','S','S','S','S','S','F','S','S','S','S','F',
-        'S','S','S','S','F','S','S','S','F','S','S',
+        'S','S','S','S','S','S','F','S','S','S','S',
       ],
     },
   ];
