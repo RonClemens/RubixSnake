@@ -40,6 +40,22 @@ var Shapes = (function () {
         'S','S','S','S','S','S','F','S','S','S','S',
       ],
     },
+    {
+      id: 'slab-2x12',
+      name: 'Rectangle Slab (2×12)',
+      emoji: '🧱',
+      description: 'A flat, solid rectangular slab — no hole in the middle, just one tiled sheet of triangles, 2 cells by 12 cells.',
+      closing: 'Close the two ends together — they sit flush, completing a solid 2×12 rectangular tile.',
+      // Pattern: S^4 F F S^10 F F S^5 (23 joints). A double-flip "F F" is a
+      // net 360° turn, so the strip keeps going straight instead of folding
+      // back on itself — the chain lays flat as one continuous row of 24
+      // triangles that perfectly tile a 2×12 rectangle (no gaps, no overlap).
+      joints: [
+        'S','S','S','S','F','F',
+        'S','S','S','S','S','S','S','S','S','S',
+        'F','F','S','S','S','S','S',
+      ],
+    },
   ];
 
   function getAll() { return library; }
