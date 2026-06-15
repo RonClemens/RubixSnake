@@ -5,18 +5,6 @@ var Shapes = (function () {
 
   var library = [
     {
-      id: 'cube',
-      name: 'L Block',
-      emoji: '📦',
-      description: 'A compact, blocky solid roughly 2.8 × 2.8 × 2.0 segment-units, with one corner notched out — about 75% solid fill, the most cube-like shape this snake can form without any overlapping pieces.',
-      closing: 'Close the two ends together — they meet up to complete the block.',
-      joints: [
-        'F','S','S','F','S','S','F','F','S','F',
-        'R','F','L',
-        'F','S','F','F','S','S','F','S','S','F',
-      ],
-    },
-    {
       id: 'rectangle',
       name: 'Picture Frame',
       emoji: '🖼️',

@@ -46,8 +46,8 @@
 
     loadCustomShapes();
 
-    // load cube by default
-    activeShape = Shapes.getById('cube');
+    // load default shape
+    activeShape = Shapes.getById('rectangle');
     render();
   }
 
