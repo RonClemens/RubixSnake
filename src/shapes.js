@@ -10,16 +10,18 @@ var Shapes = (function () {
       emoji: '🎲',
       description: 'Classic 2×2×2 cube — the most iconic Rubik\'s Snake shape.',
       closing: 'Close the two ends together — they lock into a cube.',
-      // Pattern: S R R S L L repeating × 4, minus the last L (23 joints total)
+      // Pattern: R F L F repeating (23 joints = RFLF x5 + RFL). This is the
+      // pattern that actually folds into a cube: the 24 segments land in
+      // exactly 8 spatial cells with 3 segments stacked in each (8 cells x 3
+      // = the cube's 8 corners), bbox is ~1x1x1, and segment 23 closes up
+      // right next to segment 0.
       joints: [
-        'S','R','R',
-        'S','L','L',
-        'S','R','R',
-        'S','L','L',
-        'S','R','R',
-        'S','L','L',
-        'S','R','R',
-        'S','L',
+        'R','F','L','F',
+        'R','F','L','F',
+        'R','F','L','F',
+        'R','F','L','F',
+        'R','F','L','F',
+        'R','F','L',
       ],
     },
     {
