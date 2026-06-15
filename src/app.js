@@ -96,6 +96,16 @@
     return null;
   }
 
+  function removeCustomShape(id) {
+    Shapes.remove(id);
+    var raw = localStorage.getItem('customShapes');
+    var list = [];
+    try { list = raw ? JSON.parse(raw) : []; } catch (e) { list = []; }
+    list = list.filter(function (s) { return s.id !== id; });
+    localStorage.setItem('customShapes', JSON.stringify(list));
+    if (activeShape && activeShape.id === id) activeShape = Shapes.getAll()[0] || null;
+  }
+
   // Shared "Import shape (JSON)" card — used by both the Guide intro and the Editor.
   function importCardHtml() {
     return '<div class="card">' +
@@ -308,10 +318,14 @@
     if (guideStep === 0) {
       var shapeList = Shapes.getAll().map(function (s) {
         var active = activeShape && s.id === activeShape.id;
-        return '<button data-sid="' + s.id + '" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px;background:' + (active ? 'rgba(88,166,255,.1)' : 'rgba(255,255,255,.04)') + ';border:1.5px solid ' + (active ? '#58a6ff' : '#30363d') + ';border-radius:10px;color:#fff;text-align:left;margin-bottom:6px">' +
-          '<span style="font-size:24px">' + s.emoji + '</span>' +
-          '<div><div style="font-size:14px;font-weight:700">' + s.name + '</div><div style="font-size:11px;color:#6e7681">' + s.description + '</div></div>' +
-          '</button>';
+        var isCustom = s.id.indexOf('custom-') === 0;
+        return '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+          '<button data-sid="' + s.id + '" style="flex:1;display:flex;align-items:center;gap:10px;padding:12px;background:' + (active ? 'rgba(88,166,255,.1)' : 'rgba(255,255,255,.04)') + ';border:1.5px solid ' + (active ? '#58a6ff' : '#30363d') + ';border-radius:10px;color:#fff;text-align:left;min-width:0">' +
+            '<span style="font-size:24px">' + s.emoji + '</span>' +
+            '<div style="min-width:0"><div style="font-size:14px;font-weight:700">' + s.name + '</div><div style="font-size:11px;color:#6e7681">' + s.description + '</div></div>' +
+          '</button>' +
+          (isCustom ? '<button data-delid="' + s.id + '" title="Delete custom shape" style="width:44px;flex-shrink:0;background:rgba(248,81,73,.08);border:1.5px solid rgba(248,81,73,.35);border-radius:10px;color:#f85149;font-size:18px">&#128465;</button>' : '') +
+        '</div>';
       }).join('');
       pg.innerHTML =
         '<div class="card" style="text-align:center;padding:22px 16px">' +
@@ -325,6 +339,14 @@
 
       pg.querySelectorAll('[data-sid]').forEach(function (btn) {
         btn.onclick = function () { activeShape = Shapes.getById(this.getAttribute('data-sid')); render(); };
+      });
+      pg.querySelectorAll('[data-delid]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = this.getAttribute('data-delid');
+          if (!confirm('Delete this custom shape? This can\'t be undone.')) return;
+          removeCustomShape(id);
+          render();
+        };
       });
       document.getElementById('bstart').onclick = function () { guideStep = 1; clearPhoto(); render(); };
       wireImportCard(function () {

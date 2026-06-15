@@ -53,5 +53,12 @@ var Shapes = (function () {
     library.push(shape);
   }
 
-  return { getAll: getAll, getById: getById, add: add };
+  function remove(id) {
+    for (var i = 0; i < library.length; i++) {
+      if (library[i].id === id) { library.splice(i, 1); return true; }
+    }
+    return false;
+  }
+
+  return { getAll: getAll, getById: getById, add: add, remove: remove };
 })();
