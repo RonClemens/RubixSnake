@@ -96,6 +96,35 @@
     return null;
   }
 
+  // Shared "Import shape (JSON)" card — used by both the Guide intro and the Editor.
+  function importCardHtml() {
+    return '<div class="card">' +
+      '<div class="lbl">Import shape (JSON)</div>' +
+      '<p style="color:#6e7681;font-size:11px;margin-bottom:8px">Paste a 23-element joints array (e.g. from the Engine or Editor "Copy JSON" buttons), or a full shape object with name/emoji/description/joints.</p>' +
+      '<input id="imp-name" placeholder="Name (optional)" style="width:100%;padding:9px;margin-bottom:8px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#fff;font-size:12px">' +
+      '<textarea id="imp-json" rows="3" placeholder=\'["S","S","S",...]\' style="width:100%;padding:9px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:11px;font-family:monospace;resize:vertical"></textarea>' +
+      '<div id="imp-err" style="color:#f85149;font-size:11px;margin-top:6px"></div>' +
+      '<button id="imp-btn" style="margin-top:8px;width:100%;padding:10px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:13px;font-weight:700">Import Shape</button>' +
+    '</div>';
+  }
+
+  // Wires up the card produced by importCardHtml(). onSuccess runs after a
+  // successful import (the new shape is now the last entry in Shapes.getAll()).
+  function wireImportCard(onSuccess) {
+    var btn = document.getElementById('imp-btn');
+    if (!btn) return;
+    btn.onclick = function () {
+      var text = document.getElementById('imp-json').value.trim();
+      var name = document.getElementById('imp-name').value.trim();
+      var err = document.getElementById('imp-err');
+      if (!text) { err.textContent = 'Paste a joints array or shape JSON first.'; return; }
+      var msg = importShape(text, name);
+      if (msg) { err.textContent = msg; return; }
+      err.textContent = '';
+      onSuccess();
+    };
+  }
+
   function switchTab(t) {
     activeTab = t;
     document.getElementById('tab-guide').className  = 'tab' + (t === 'guide'  ? ' active' : '');
@@ -292,30 +321,16 @@
         '</div>' +
         '<div class="card"><div class="lbl">Choose a shape</div>' + shapeList + '</div>' +
         '<button id="bstart" style="padding:15px;background:#238636;border-radius:12px;font-size:16px;font-weight:700;color:#fff;width:100%">Start → Joint 1</button>' +
-        '<div class="card">' +
-          '<div class="lbl">Import shape (JSON)</div>' +
-          '<p style="color:#6e7681;font-size:11px;margin-bottom:8px">Paste a 23-element joints array (e.g. from the Engine or Editor "Copy JSON" buttons), or a full shape object with name/emoji/description/joints.</p>' +
-          '<input id="imp-name" placeholder="Name (optional)" style="width:100%;padding:9px;margin-bottom:8px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#fff;font-size:12px">' +
-          '<textarea id="imp-json" rows="3" placeholder=\'["S","S","S",...]\' style="width:100%;padding:9px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:11px;font-family:monospace;resize:vertical"></textarea>' +
-          '<div id="imp-err" style="color:#f85149;font-size:11px;margin-top:6px"></div>' +
-          '<button id="imp-btn" style="margin-top:8px;width:100%;padding:10px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:13px;font-weight:700">Import Shape</button>' +
-        '</div>';
+        importCardHtml();
 
       pg.querySelectorAll('[data-sid]').forEach(function (btn) {
         btn.onclick = function () { activeShape = Shapes.getById(this.getAttribute('data-sid')); render(); };
       });
       document.getElementById('bstart').onclick = function () { guideStep = 1; clearPhoto(); render(); };
-      document.getElementById('imp-btn').onclick = function () {
-        var text = document.getElementById('imp-json').value.trim();
-        var name = document.getElementById('imp-name').value.trim();
-        var err = document.getElementById('imp-err');
-        if (!text) { err.textContent = 'Paste a joints array or shape JSON first.'; return; }
-        var msg = importShape(text, name);
-        if (msg) { err.textContent = msg; return; }
-        err.textContent = '';
+      wireImportCard(function () {
         activeShape = Shapes.getAll()[Shapes.getAll().length - 1];
         render();
-      };
+      });
       return;
     }
 
@@ -570,7 +585,15 @@
           }).join(' ') +
         '</div>' +
         '<button id="ed-copy" style="width:100%;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:12px;font-weight:700">&#128203; Copy JSON</button>' +
-      '</div>';
+      '</div>' +
+      '<div class="card">' +
+        '<div class="lbl">Save this as a new shape</div>' +
+        '<p style="color:#6e7681;font-size:11px;margin-bottom:8px">Saves the joint sequence above to your shape picker (stored in this browser).</p>' +
+        '<input id="ed-save-name" placeholder="Shape name" style="width:100%;padding:9px;margin-bottom:8px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#fff;font-size:12px">' +
+        '<button id="ed-save-btn" style="width:100%;padding:10px;background:#238636;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700">&#128190; Save as New Shape</button>' +
+        '<div id="ed-save-msg" style="font-size:11px;margin-top:6px"></div>' +
+      '</div>' +
+      importCardHtml();
 
     // Segment selector
     pg.querySelectorAll('[data-edid]').forEach(function (btn) {
@@ -648,6 +671,24 @@
         edCopyBtn.textContent = json;
       }
     };
+
+    // Save current edit as a new shape in the picker
+    var edSaveBtn = document.getElementById('ed-save-btn');
+    if (edSaveBtn) edSaveBtn.onclick = function () {
+      var name = document.getElementById('ed-save-name').value.trim();
+      var msg = document.getElementById('ed-save-msg');
+      if (!name) { msg.textContent = 'Enter a name for this shape.'; msg.style.color = '#f85149'; return; }
+      importShape(JSON.stringify(editedJoints()), name);
+      activeShape = Shapes.getAll()[Shapes.getAll().length - 1];
+      msg.textContent = 'Saved "' + name + '" — find it in Guide → Choose a shape.';
+      msg.style.color = '#3fb950';
+    };
+
+    // Import a shape (JSON) directly from the Editor
+    wireImportCard(function () {
+      activeShape = Shapes.getAll()[Shapes.getAll().length - 1];
+      renderEditor();
+    });
 
     // 3D init + wire editor callbacks
     setTimeout(function () {
