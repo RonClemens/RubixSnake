@@ -1,5 +1,5 @@
 // shapes.js — preset shape library
-// joints: array of 23 S/R/L strings describing each joint from straight
+// joints: array of 23 S/R/L/F strings describing each joint from straight
 
 var Shapes = (function () {
 
@@ -28,13 +28,14 @@ var Shapes = (function () {
       emoji: '🖼️',
       description: 'A flat rectangular frame — a hollow loop with an open center, like a picture frame.',
       closing: 'Close the two ends together — they lock into a flat rectangular frame with an open center.',
-      // Pattern: 7 straight, then LL, 3 straight, then LR, 5 straight,
-      // then RR, 2 straight (23 joints, 6 turns total).
-      // Traces a flat, hollow rectangular loop (open center) with no
-      // segment overlaps — segment 0 sits at one corner of the frame.
+      // Pattern: four 180° "flip" joints (F), each a clean 90° corner that
+      // stays perfectly flat (unlike R/L pairs, which tilt out of plane).
+      // Gaps of 6, 4, 4, 3, 2 straight segments between/around the corners
+      // trace a flat, hollow rectangular loop with no segment overlaps —
+      // segment 0 sits at the top-left corner of the frame.
       joints: [
-        'S','S','S','S','S','S','S','L','L','S','S','S','L','R',
-        'S','S','S','S','S','R','R','S','S',
+        'S','S','S','S','S','S','F','S','S','S','S','F',
+        'S','S','S','S','F','S','S','S','F','S','S',
       ],
     },
   ];

@@ -7,12 +7,14 @@
     S: { col: '#58a6ff', bg: 'rgba(88,166,255,.12)',  lbl: 'STRAIGHT',       em: '&#8594;' },
     R: { col: '#f0883e', bg: 'rgba(240,136,62,.15)',  lbl: 'FOLD RIGHT 90°', em: '&#8618;' },
     L: { col: '#3fb950', bg: 'rgba(63,185,80,.15)',   lbl: 'FOLD LEFT 90°',  em: '&#8617;' },
+    F: { col: '#a371f7', bg: 'rgba(163,113,247,.15)', lbl: 'FLIP 180°',      em: '&#8635;' },
   };
 
   function pl(jid) { return jid % 2 === 1 ? 'vertical' : 'horizontal'; }
 
   function dirtxt(t, jid) {
     if (t === 'S') return 'Continue straight — no fold needed';
+    if (t === 'F') return '↺ Flip segment B 180° — fold it straight back the way it came';
     var p = pl(jid);
     if (t === 'R') return p === 'vertical' ? '↑ Fold segment B UPWARD' : '▶ Fold segment B to the RIGHT';
     return p === 'vertical' ? '↓ Fold segment B DOWNWARD' : '◀ Fold segment B to the LEFT';
@@ -154,7 +156,9 @@
     if (t === 'R' && p === 'vertical')   return '<svg viewBox="0 0 240 115" style="width:100%;max-width:280px;display:block;margin:0 auto">' + svgBox(8,62,ca,na) + '<path d="M82,73 C82,38 115,26 138,26" fill="none" stroke="' + cc + '" stroke-width="3" stroke-linecap="round"/><polygon points="152,26 138,20 138,32" fill="' + cc + '"/>' + svgBox(154,15,cb,nb) + '<text x="82" y="108" fill="' + cc + '" font-size="10" font-weight="bold">↑ FOLD UP (vertical)</text></svg>';
     if (t === 'R' && p === 'horizontal') return '<svg viewBox="0 0 240 96" style="width:100%;max-width:280px;display:block;margin:0 auto">' + svgBox(8,35,ca,na) + '<path d="M82,46 C116,46 126,20 146,20" fill="none" stroke="' + cc + '" stroke-width="3" stroke-linecap="round"/><polygon points="160,20 146,14 146,26" fill="' + cc + '"/>' + svgBox(162,9,cb,nb) + '<text x="82" y="86" fill="' + cc + '" font-size="10" font-weight="bold">▶ FOLD RIGHT (horizontal)</text></svg>';
     if (t === 'L' && p === 'vertical')   return '<svg viewBox="0 0 240 115" style="width:100%;max-width:280px;display:block;margin:0 auto">' + svgBox(8,18,ca,na) + '<path d="M82,29 C82,64 115,76 138,76" fill="none" stroke="' + cc + '" stroke-width="3" stroke-linecap="round"/><polygon points="152,76 138,70 138,82" fill="' + cc + '"/>' + svgBox(154,65,cb,nb) + '<text x="82" y="108" fill="' + cc + '" font-size="10" font-weight="bold">↓ FOLD DOWN (vertical)</text></svg>';
-    return '<svg viewBox="0 0 240 96" style="width:100%;max-width:280px;display:block;margin:0 auto">' + svgBox(8,9,ca,na) + '<path d="M82,20 C116,20 126,46 146,46" fill="none" stroke="' + cc + '" stroke-width="3" stroke-linecap="round"/><polygon points="160,46 146,40 146,52" fill="' + cc + '"/>' + svgBox(162,35,cb,nb) + '<text x="82" y="86" fill="' + cc + '" font-size="10" font-weight="bold">◀ FOLD LEFT (horizontal)</text></svg>';
+    if (t === 'L' && p === 'horizontal') return '<svg viewBox="0 0 240 96" style="width:100%;max-width:280px;display:block;margin:0 auto">' + svgBox(8,9,ca,na) + '<path d="M82,20 C116,20 126,46 146,46" fill="none" stroke="' + cc + '" stroke-width="3" stroke-linecap="round"/><polygon points="160,46 146,40 146,52" fill="' + cc + '"/>' + svgBox(162,35,cb,nb) + '<text x="82" y="86" fill="' + cc + '" font-size="10" font-weight="bold">◀ FOLD LEFT (horizontal)</text></svg>';
+    // F: 180° flip — segment B folds straight back, reversing direction
+    return '<svg viewBox="0 0 240 100" style="width:100%;max-width:280px;display:block;margin:0 auto">' + svgBox(8,60,ca,na) + '<path d="M68,71 C160,71 175,45 175,35 C175,22 160,18 80,18" fill="none" stroke="' + cc + '" stroke-width="3" stroke-linecap="round"/><polygon points="68,18 80,12 80,24" fill="' + cc + '"/>' + svgBox(8,7,cb,nb) + '<text x="120" y="95" text-anchor="middle" fill="' + cc + '" font-size="10" font-weight="bold">↺ FLIP 180° (reverse direction)</text></svg>';
   }
 
   // ── segment strip ──────────────────────────────────────────────────────────

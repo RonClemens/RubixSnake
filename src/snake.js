@@ -8,7 +8,7 @@
 // Joint rotation axis alternates:
 //   After even segment i: hinge = leg2 (Z-axis when straight)
 //   After odd  segment i: hinge = leg1 (Y-axis when straight)
-// R = +90° around hinge,  L = −90° around hinge.
+// R = +90° around hinge,  L = −90° around hinge,  F = 180° (flip) around hinge.
 
 var Snake = (function () {
 
@@ -128,6 +128,8 @@ var Snake = (function () {
           var nfx = ux, nfy = uy; ux = -fx; uy = -fy; fx = nfx; fy = nfy;
         } else if (t === 'L') {
           var nfx2 = -ux, nfy2 = -uy; ux = fx; uy = fy; fx = nfx2; fy = nfy2;
+        } else if (t === 'F') {
+          fx = -fx; fy = -fy; ux = -ux; uy = -uy;
         }
       }
     }
@@ -182,11 +184,11 @@ var Snake = (function () {
       var b = prev.b.map(function (v) { return _rotateAround(v, axisPt, depthDir, Math.PI); });
 
       var jt = joints[i-1];
-      if (jt === 'R' || jt === 'L') {
+      if (jt === 'R' || jt === 'L' || jt === 'F') {
         var inPlaneDir = vnorm(vsub(prev.f[other], prev.f[0]));
         var hingeAxis = vnorm(vcross(depthDir, inPlaneDir));
         var pivot = vmid(vmid(prev.f[0], prev.b[0]), vmid(prev.f[other], prev.b[other]));
-        var angle = (jt === 'R' ? 1 : -1) * Math.PI / 2;
+        var angle = jt === 'F' ? Math.PI : (jt === 'R' ? 1 : -1) * Math.PI / 2;
         f = f.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
         b = b.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
       }

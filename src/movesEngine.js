@@ -1,5 +1,5 @@
 // movesEngine.js — interactive joint editor for building new shapes
-// Renders a controls panel where each joint can be set to S / R / L
+// Renders a controls panel where each joint can be set to S / R / L / F
 // with live 2D + 3D preview update.
 
 var MovesEngine = (function () {
@@ -11,6 +11,7 @@ var MovesEngine = (function () {
     S: { col: '#58a6ff', lbl: 'S', title: 'Straight' },
     R: { col: '#f0883e', lbl: 'R', title: 'Right 90°' },
     L: { col: '#3fb950', lbl: 'L', title: 'Left 90°' },
+    F: { col: '#a371f7', lbl: 'F', title: 'Flip 180°' },
   };
 
   function init(container, joints, onChange) {
@@ -21,7 +22,7 @@ var MovesEngine = (function () {
 
   function render(container) {
     var h = '<div style="display:flex;flex-direction:column;gap:6px">';
-    h += '<div style="font-size:11px;color:#6e7681;margin-bottom:4px">Tap a joint to cycle S → R → L → S</div>';
+    h += '<div style="font-size:11px;color:#6e7681;margin-bottom:4px">Tap a joint to cycle S → R → L → F → S</div>';
 
     // group joints in rows of 6 to match the S R R S L L pattern
     for (var i = 0; i < 23; i++) {
@@ -93,15 +94,15 @@ var MovesEngine = (function () {
   }
 
   function cycleJoint(ji) {
-    var seq = ['S', 'R', 'L'];
+    var seq = ['S', 'R', 'L', 'F'];
     var cur = currentJoints[ji];
     var idx = seq.indexOf(cur);
-    currentJoints[ji] = seq[(idx + 1) % 3];
+    currentJoints[ji] = seq[(idx + 1) % 4];
   }
 
   function formatSeq(joints) {
     return joints.map(function (t, i) {
-      var u = { S: '#58a6ff', R: '#f0883e', L: '#3fb950' };
+      var u = { S: '#58a6ff', R: '#f0883e', L: '#3fb950', F: '#a371f7' };
       return '<span style="color:' + u[t] + '">' + t + '</span>';
     }).join(' ');
   }

@@ -29,7 +29,7 @@ var Renderer2D = (function () {
     function ty(y) { return y * sc + oy; }
 
     var jid = (highlightJoint !== null && highlightJoint !== undefined) ? highlightJoint : -1;
-    var UI = { S: '#58a6ff', R: '#f0883e', L: '#3fb950' };
+    var UI = { S: '#58a6ff', R: '#f0883e', L: '#3fb950', F: '#a371f7' };
     var jColor = (jid >= 1 && jid <= 23) ? (UI[joints[jid - 1]] || '#fff') : '';
 
     for (var i = 0; i < N; i++) {
