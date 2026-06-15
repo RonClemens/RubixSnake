@@ -6,20 +6,14 @@ var Shapes = (function () {
   var library = [
     {
       id: 'cube',
-      name: 'Cube',
-      emoji: '🎲',
-      description: 'Classic 2×2×2 cube — the most iconic Rubik\'s Snake shape.',
-      closing: 'Close the two ends together — they lock into a cube.',
-      // Pattern: S R R S L L repeating × 4, minus the last L (23 joints total)
+      name: 'L Block',
+      emoji: '📦',
+      description: 'A compact, blocky solid roughly 2.8 × 2.8 × 2.0 segment-units, with one corner notched out — about 75% solid fill, the most cube-like shape this snake can form without any overlapping pieces.',
+      closing: 'Close the two ends together — they meet up to complete the block.',
       joints: [
-        'S','R','R',
-        'S','L','L',
-        'S','R','R',
-        'S','L','L',
-        'S','R','R',
-        'S','L','L',
-        'S','R','R',
-        'S','L',
+        'F','S','S','F','S','S','F','F','S','F',
+        'R','F','L',
+        'F','S','F','F','S','S','F','S','S','F',
       ],
     },
     {
