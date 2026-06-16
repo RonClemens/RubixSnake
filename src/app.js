@@ -75,31 +75,100 @@
     return list;
   }
 
-  // Accepts either a bare 23-element joints array, or a full shape object
-  // { name, emoji, description, closing, joints }. Returns an error string,
-  // or null on success.
+  // Detect and extract joints + optional step descriptions from an enriched
+  // step array: [{segment, action, description}, ...].  Entries are sorted by
+  // segment number; the first 23 are used (a 24th "closing" entry is ignored).
+  function fromEnrichedArr(arr) {
+    var sorted = arr.slice().sort(function (a, b) { return (a.segment || 0) - (b.segment || 0); });
+    return {
+      joints: sorted.map(function (e) { return String(e.action || '').toUpperCase(); }).slice(0, 23),
+      descs:  sorted.map(function (e) { return String(e.description || ''); }).slice(0, 23),
+    };
+  }
+
+  // Accepts:
+  //   • a bare 23-element joints array  ["S","R","L",...]
+  //   • an enriched step array          [{segment,action,description}, ...]
+  //   • a full shape object             {name, emoji, description, closing, joints}
+  //   • a shape object with steps       {name, ..., steps:[{segment,action,...}]}
+  // Returns an error string on failure, or null on success.
   function importShape(text, name) {
     var parsed;
     try { parsed = JSON.parse(text); } catch (e) { return 'Invalid JSON: ' + e.message; }
-    var joints = Array.isArray(parsed) ? parsed : parsed.joints;
-    if (!Array.isArray(joints) || joints.length !== 23) return 'joints must be an array of 23 S/R/L/F values';
-    for (var i = 0; i < joints.length; i++) {
-      if (JOINT_TYPES.indexOf(joints[i]) < 0) return 'joint ' + (i+1) + ' is "' + joints[i] + '" — must be S, R, L, or F';
+
+    var joints, stepDescs, shapeMeta = {};
+
+    if (Array.isArray(parsed)) {
+      if (parsed.length > 0 && parsed[0] !== null && typeof parsed[0] === 'object' && 'action' in parsed[0]) {
+        // Enriched step array
+        var ea = fromEnrichedArr(parsed);
+        joints = ea.joints; stepDescs = ea.descs;
+      } else {
+        // Bare joints array
+        joints = parsed;
+      }
+    } else if (parsed && typeof parsed === 'object') {
+      shapeMeta = parsed;
+      if (Array.isArray(parsed.steps) && parsed.steps.length > 0 && 'action' in parsed.steps[0]) {
+        // Shape object with enriched steps
+        var es = fromEnrichedArr(parsed.steps);
+        joints = es.joints; stepDescs = es.descs;
+      } else {
+        joints = parsed.joints;
+      }
     }
-    var meta = Array.isArray(parsed) ? {} : parsed;
+
+    if (!Array.isArray(joints) || joints.length < 23) {
+      return 'Need 23 joint values (S/R/L/F) — got ' + (joints ? joints.length : 0);
+    }
+    joints = joints.slice(0, 23);
+    for (var i = 0; i < joints.length; i++) {
+      if (JOINT_TYPES.indexOf(joints[i]) < 0) {
+        return 'segment ' + (i + 1) + ' action "' + joints[i] + '" is not recognized — must be S, R, L, or F';
+      }
+    }
+
     var shape = {
       id: 'custom-' + Date.now(),
-      name: (name || meta.name || 'Custom Shape'),
-      emoji: meta.emoji || '✨',
-      description: meta.description || 'A custom imported shape.',
-      closing: meta.closing || 'Close the two ends together to lock the shape.',
-      joints: joints.slice(),
+      name:        name || shapeMeta.name        || 'Custom Shape',
+      emoji:       shapeMeta.emoji               || '✨',
+      description: shapeMeta.description         || 'A custom imported shape.',
+      closing:     shapeMeta.closing             || 'Close the two ends together to lock the shape.',
+      joints:      joints.slice(),
     };
+    if (stepDescs && stepDescs.some(function (d) { return d; })) {
+      shape.stepDescriptions = stepDescs;
+    }
     Shapes.add(shape);
     var list = saveCustomShapes();
     list.push(shape);
     localStorage.setItem('customShapes', JSON.stringify(list));
     return null;
+  }
+
+  // Generate a human-readable description for joint jid (1-indexed).
+  function stepDesc(t, jid) {
+    var ai = jid - 1, bi = jid;
+    var an = Snake.segColor(ai).n, bn = Snake.segColor(bi).n;
+    if (t === 'S') return an + ' → ' + bn + ': continue straight — no fold needed.';
+    if (t === 'F') return an + ' → ' + bn + ': flip ' + bn + ' segment 180° straight back.';
+    var vert = pl(jid) === 'vertical';
+    if (t === 'R') return an + ' → ' + bn + (vert ? ': fold ' + bn + ' upward.' : ': fold ' + bn + ' to the right.');
+    return an + ' → ' + bn + (vert ? ': fold ' + bn + ' downward.' : ': fold ' + bn + ' to the left.');
+  }
+
+  // Build the enriched [{segment, action, description}] export from a joints array.
+  // Uses stored stepDescriptions from the active shape if available, otherwise
+  // auto-generates from segment colours and fold direction.
+  function exportEnriched(joints) {
+    var stored = activeShape && activeShape.stepDescriptions;
+    return joints.map(function (t, i) {
+      return {
+        segment:     i + 1,
+        action:      t,
+        description: (stored && stored[i]) || stepDesc(t, i + 1),
+      };
+    });
   }
 
   function removeCustomShape(id) {
@@ -241,7 +310,7 @@
   function importCardHtml() {
     return '<div class="card">' +
       '<div class="lbl">Import shape (JSON)</div>' +
-      '<p style="color:#6e7681;font-size:11px;margin-bottom:8px">Paste a 23-element joints array (e.g. from the Engine or Editor "Copy JSON" buttons), or a full shape object with name/emoji/description/joints.</p>' +
+      '<p style="color:#6e7681;font-size:11px;margin-bottom:8px">Paste a compact joints array <code style="color:#58a6ff">["S","R",...]</code>, an enriched step array <code style="color:#58a6ff">[{segment,action,description}...]</code>, or a full shape object with name/emoji/joints.</p>' +
       '<input id="imp-name" placeholder="Name (optional)" style="width:100%;padding:9px;margin-bottom:8px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#fff;font-size:12px">' +
       '<textarea id="imp-json" rows="3" placeholder=\'["S","S","S",...]\' style="width:100%;padding:9px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:11px;font-family:monospace;resize:vertical"></textarea>' +
       '<div id="imp-err" style="color:#f85149;font-size:11px;margin-top:6px"></div>' +
@@ -755,7 +824,10 @@
             return '<span style="color:' + u[t] + '">' + t + '</span>';
           }).join(' ') +
         '</div>' +
-        '<button id="ed-copy" style="width:100%;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:12px;font-weight:700">&#128203; Copy JSON</button>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button id="ed-copy" style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:12px;font-weight:700">&#128203; Copy JSON</button>' +
+          '<button id="ed-copy-enriched" style="flex:1;padding:9px;background:#21262d;border:1px solid #30363d;border-radius:8px;color:#a371f7;font-size:12px;font-weight:700">&#128196; Copy Enriched</button>' +
+        '</div>' +
       '</div>' +
       '<div class="card">' +
         '<div class="lbl">Save this as a new shape</div>' +
@@ -840,6 +912,19 @@
         });
       } else {
         edCopyBtn.textContent = json;
+      }
+    };
+
+    var edCopyEnriched = document.getElementById('ed-copy-enriched');
+    if (edCopyEnriched) edCopyEnriched.onclick = function () {
+      var json = JSON.stringify(exportEnriched(editedJoints()), null, 2);
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(json).then(function () {
+          edCopyEnriched.textContent = '✓ Copied!';
+          setTimeout(function () { edCopyEnriched.innerHTML = '&#128196; Copy Enriched'; }, 1500);
+        });
+      } else {
+        edCopyEnriched.textContent = json;
       }
     };
 
