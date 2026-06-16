@@ -23,6 +23,7 @@
   // ── state ──────────────────────────────────────────────────────────────────
   var activeTab   = 'guide';   // 'guide' | 'engine' | 'editor'
   var guideStep   = 0;         // 0=intro, 1–23=joints, 24=done
+  var guideReverse = false;    // false=fold 0→23, true=fold 23→0
   var edSeg = 0;               // selected segment in editor
   var edXf  = {};              // per-segment rotation overrides { id: degrees }
   var edFocusAll = true;       // 3D camera: true = fit whole snake, false = zoom to edSeg
@@ -189,6 +190,16 @@
     var result = [];
     invalidJointIndices().forEach(function (j) {
       if (j < numJoints) { result.push(j); result.push(j + 1); }
+    });
+    return result;
+  }
+
+  // Reverse mode: at reverse step k, the last k joints (indices 23-k..22) have been
+  // applied and all 24 segments are visible. Only highlight invalid joints in that range.
+  function invalidSegsForRevStep(k) {
+    var result = [];
+    invalidJointIndices().forEach(function (j) {
+      if (j >= 23 - k) { result.push(j); result.push(j + 1); }
     });
     return result;
   }
@@ -395,7 +406,11 @@
 
   function jnt() {
     if (!activeShape || guideStep < 1 || guideStep > 23) return null;
-    return { id: guideStep, t: activeShape.joints[guideStep - 1] };
+    var joints = activeShape.joints;
+    // physId: the physical joint being folded this step (1-indexed, 1..23)
+    var physId = guideReverse ? (24 - guideStep) : guideStep;
+    var t = joints[physId - 1]; // joint action at this physical position
+    return { id: guideStep, physId: physId, t: t };
   }
 
   // Translate the editor's per-segment rotation overrides (edXf, in degrees)
@@ -435,8 +450,8 @@
     if (!iB64 || !j) return;
     if (!akey) { alert('Enter your Anthropic API key — tap ⚙'); return; }
     busy = true; render();
-    var a = j.id - 1, b = j.id;
-    var prompt = 'Rubik\'s Snake fold check.\nColors repeat: 1=Blue 2=Orange 3=Pink 4=White 5=Red 6=Green\n\nJoint ' + j.id + '/23 | ' + UI[j.t].lbl + ' | ' + pl(j.id) + ' plane\nSeg A=#' + (a+1) + ' ' + Snake.segColor(a).n + '  Seg B=#' + (b+1) + ' ' + Snake.segColor(b).n + '\n\nReply EXACTLY:\nVERDICT: PASS or VERDICT: NEEDS ADJUSTMENT\nCOLORS: ...\nFOLD: ...\nTIP: ...';
+    var a = j.physId - 1, b = j.physId;
+    var prompt = 'Rubik\'s Snake fold check.\nColors repeat: 1=Blue 2=Orange 3=Pink 4=White 5=Red 6=Green\n\nJoint ' + j.physId + '/23 | ' + UI[j.t].lbl + ' | ' + pl(j.physId) + ' plane\nSeg A=#' + (a+1) + ' ' + Snake.segColor(a).n + '  Seg B=#' + (b+1) + ' ' + Snake.segColor(b).n + '\n\nReply EXACTLY:\nVERDICT: PASS or VERDICT: NEEDS ADJUSTMENT\nCOLORS: ...\nFOLD: ...\nTIP: ...';
     fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -525,7 +540,10 @@
     var joints = activeShape ? activeShape.joints : [];
 
     // header state label + progress
-    document.getElementById('slbl').textContent = guideStep === 0 ? activeShape ? activeShape.name : 'Intro' : guideStep <= 23 ? 'Joint ' + guideStep + '/23' : 'Done!';
+    document.getElementById('slbl').textContent =
+      guideStep === 0 ? (activeShape ? activeShape.name : 'Intro')
+      : guideStep <= 23 ? (guideReverse ? '← Joint ' + (24 - guideStep) + '/23' : 'Joint ' + guideStep + '/23')
+      : 'Done!';
     document.getElementById('pfill').style.width = ((guideStep / 23) * 100) + '%';
 
     var nr = document.getElementById('navrow');
@@ -537,7 +555,7 @@
       bf.style.color = ok2 ? '#fff' : '#484f58';
       bf.style.border = ok2 ? 'none' : '1.5px solid #30363d';
       bf.disabled = !ok2;
-      bf.innerHTML = guideStep === 23 ? 'Final Joint ✓' : 'Next Joint →';
+      bf.innerHTML = guideStep === 23 ? 'Final Joint ✓' : (guideReverse ? '← Next Joint' : 'Next Joint →');
       document.getElementById('bbk').style.color = guideStep <= 1 ? '#484f58' : '#c9d1d9';
     } else {
       nr.style.display = 'none';
@@ -566,18 +584,40 @@
         activeInvalidWarn = '<div style="background:rgba(255,119,0,.1);border:1.5px solid #ff7700;border-radius:8px;padding:9px 12px;font-size:11px;color:#ff7700;font-weight:700;margin-top:8px">⚠ Unknown actions at ' + warnList + ' — treated as S. Open in Engine tab to correct.</div>';
       }
 
+      var dirAct = 'background:rgba(88,166,255,.12);border:1.5px solid #58a6ff;color:#58a6ff';
+      var dirInact = 'background:rgba(255,255,255,.04);border:1.5px solid #30363d;color:#6e7681';
+      var flatPreviewH = guideReverse
+        ? '<div class="card" style="padding:10px">' +
+            '<div class="lbl">Starting position — full snake flat (from segment 23 end)</div>' +
+            '<canvas id="intro-2d" style="width:100%;background:#0d1117;border-radius:6px;margin-bottom:8px"></canvas>' +
+            '<div id="intro-3d" style="width:100%;height:160px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
+          '</div>'
+        : '';
+      var startLabel = guideReverse ? 'Start ← from Joint 23' : 'Start → from Joint 1';
+
       pg.innerHTML =
         '<div class="card" style="text-align:center;padding:22px 16px">' +
           '<div style="font-size:48px;margin-bottom:8px">🐍</div>' +
           '<div style="font-size:21px;font-weight:800;margin-bottom:6px">Rubix Snake Guide</div>' +
           '<p style="color:#8b949e;font-size:13px;line-height:1.55">Step-by-step folding instructions with 2D path view, fold diagrams, and AI photo verification.</p>' +
         '</div>' +
-        '<div class="card"><div class="lbl">Choose a shape</div>' + shapeList + activeInvalidWarn + '</div>' +
-        '<button id="bstart" style="padding:15px;background:#238636;border-radius:12px;font-size:16px;font-weight:700;color:#fff;width:100%">Start → Joint 1</button>' +
+        '<div class="card"><div class="lbl">Choose a shape</div>' + shapeList + activeInvalidWarn +
+          '<div class="lbl" style="margin-top:12px">Folding direction</div>' +
+          '<div style="display:flex;gap:6px">' +
+            '<button id="bdir-fwd" style="flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;' + (!guideReverse ? dirAct : dirInact) + '">↗ 0 → 23</button>' +
+            '<button id="bdir-rev" style="flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;' + (guideReverse ? dirAct : dirInact) + '">↙ 23 → 0</button>' +
+          '</div>' +
+        '</div>' +
+        flatPreviewH +
+        '<button id="bstart" style="padding:15px;background:#238636;border-radius:12px;font-size:16px;font-weight:700;color:#fff;width:100%">' + startLabel + '</button>' +
         importCardHtml();
 
       pg.querySelectorAll('[data-sid]').forEach(function (btn) {
-        btn.onclick = function () { activeShape = Shapes.getById(this.getAttribute('data-sid')); render(); };
+        btn.onclick = function () {
+          activeShape = Shapes.getById(this.getAttribute('data-sid'));
+          guideReverse = false;
+          render();
+        };
       });
       pg.querySelectorAll('[data-delid]').forEach(function (btn) {
         btn.onclick = function () {
@@ -587,11 +627,22 @@
           render();
         };
       });
+      document.getElementById('bdir-fwd').onclick = function () { guideReverse = false; render(); };
+      document.getElementById('bdir-rev').onclick = function () { guideReverse = true; render(); };
       document.getElementById('bstart').onclick = function () { guideStep = 1; clearPhoto(); render(); };
       wireImportCard(function () {
         activeShape = Shapes.getAll()[Shapes.getAll().length - 1];
+        guideReverse = false;
         render();
       });
+      if (guideReverse) {
+        setTimeout(function () {
+          var cv2 = document.getElementById('intro-2d');
+          if (cv2) Renderer2D.draw(cv2, joints, null);
+          var v3i = document.getElementById('intro-3d');
+          if (v3i) { Renderer3D.init(v3i); Renderer3D.update(Array(23).fill('S')); }
+        }, 20);
+      }
       return;
     }
 
@@ -611,7 +662,7 @@
         '</div>' +
         '<div class="card"><p style="font-size:14px;color:#c9d1d9;line-height:1.6">' + doneClosing + '<br><br><b style="color:#f0883e">Doesn\'t fit?</b> Mirror all R↔L from joint 1 — some snakes have opposite chirality.</p></div>' +
         '<button id="brst" style="padding:14px;background:#238636;border-radius:12px;font-size:15px;font-weight:700;color:#fff;width:100%">↺ Start Over</button>';
-      document.getElementById('brst').onclick = function () { guideStep = 0; clearPhoto(); render(); };
+      document.getElementById('brst').onclick = function () { guideStep = 0; guideReverse = false; clearPhoto(); render(); };
       setTimeout(function () {
         var v3 = document.getElementById('done-3d');
         if (v3) { Renderer3D.init(v3); Renderer3D.update(joints, { invalidSegs: invalidSegsForStep(joints.length) }); }
@@ -620,12 +671,12 @@
     }
 
     // JOINT STEP
-    var ai = guideStep - 1, bi = guideStep;
+    var ai = j.physId - 1, bi = j.physId;  // physical segment indices for A and B
     var t = j.t, tc = UI[t].col, tbg = UI[t].bg;
-    var isInvalidStep = invalidJointIndices().indexOf(guideStep - 1) >= 0;
+    var isInvalidStep = invalidJointIndices().indexOf(j.physId - 1) >= 0;
     var invalidOriginal = '';
     if (isInvalidStep && activeShape && activeShape.invalidJoints) {
-      var ij2 = activeShape.invalidJoints.filter(function (x) { return x.index === guideStep - 1; })[0];
+      var ij2 = activeShape.invalidJoints.filter(function (x) { return x.index === j.physId - 1; })[0];
       if (ij2) invalidOriginal = ij2.original;
     }
 
@@ -677,15 +728,15 @@
         '<div class="lbl">3D view — drag to rotate</div>' +
         '<div id="guide-3d" style="width:100%;height:220px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
       '</div>' +
-      '<div class="card"><div class="lbl">All 24 segments</div>' + strip(j.id, tc) + '</div>' +
+      '<div class="card"><div class="lbl">All 24 segments</div>' + strip(j.physId, tc) + '</div>' +
       '<div class="card" style="border:1.5px solid ' + tc + '44;background:' + tbg + '">' +
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
           '<div style="width:42px;height:42px;border-radius:10px;background:' + tc + '20;border:2px solid ' + tc + ';display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">' + UI[t].em + '</div>' +
           '<div><div style="font-size:17px;font-weight:800;color:' + tc + '">' + UI[t].lbl + '</div>' +
-          '<div style="font-size:11px;color:#6e7681;margin-top:1px">' + (pl(j.id) === 'vertical' ? '↕ Vertical' : '↔ Horizontal') + ' · Cycle ' + (Math.floor((j.id-1)/6)+1) + '/4 · Pos ' + (((j.id-1)%6)+1) + '/6</div></div>' +
+          '<div style="font-size:11px;color:#6e7681;margin-top:1px">' + (pl(j.physId) === 'vertical' ? '↕ Vertical' : '↔ Horizontal') + ' · Cycle ' + (Math.floor((j.physId-1)/6)+1) + '/4 · Pos ' + (((j.physId-1)%6)+1) + '/6</div></div>' +
         '</div>' +
-        '<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:10px 6px;margin-bottom:10px">' + svgDiag(t, j.id, ai, bi) + '</div>' +
-        '<div style="background:rgba(0,0,0,.25);border-radius:7px;padding:9px 12px;font-size:13px;font-weight:700;color:' + tc + '">' + dirtxt(t, j.id) + '</div>' +
+        '<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:10px 6px;margin-bottom:10px">' + svgDiag(t, j.physId, ai, bi) + '</div>' +
+        '<div style="background:rgba(0,0,0,.25);border-radius:7px;padding:9px 12px;font-size:13px;font-weight:700;color:' + tc + '">' + dirtxt(t, j.physId) + '</div>' +
       '</div>' +
       (isInvalidStep ? '<div style="background:rgba(255,119,0,.1);border:1.5px solid #ff7700;border-radius:10px;padding:10px 12px;font-size:12px;color:#ff7700;font-weight:700">⚠ Unknown action "' + invalidOriginal + '" at this joint — treated as S (straight). Use the Engine tab to set the correct fold.</div>' : '') +
       '<div class="card"><div class="lbl">📷 Photo check — after folding</div>' + photoH + '</div>' +
@@ -701,9 +752,19 @@
 
     setTimeout(function () {
       var cv = document.getElementById('sc');
-      if (cv) Renderer2D.draw(cv, joints.slice(0, guideStep), guideStep, invalidJointIndices());
+      // 2D: always pass full joints + physical joint ID so A/B labels land on correct segments
+      if (cv) Renderer2D.draw(cv, joints, j.physId, invalidJointIndices());
       var v3 = document.getElementById('guide-3d');
-      if (v3) { Renderer3D.init(v3); Renderer3D.update(joints.slice(0, guideStep), { invalidSegs: invalidSegsForStep(guideStep) }); }
+      if (v3) {
+        Renderer3D.init(v3);
+        if (guideReverse) {
+          // Show all 24 segments: first (23-guideStep) joints straight, last guideStep joints folded
+          var revJts = Array(23 - guideStep).fill('S').concat(joints.slice(23 - guideStep, 23));
+          Renderer3D.update(revJts, { invalidSegs: invalidSegsForRevStep(guideStep) });
+        } else {
+          Renderer3D.update(joints.slice(0, guideStep), { invalidSegs: invalidSegsForStep(guideStep) });
+        }
+      }
     }, 20);
   }
 
