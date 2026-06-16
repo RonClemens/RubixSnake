@@ -93,7 +93,7 @@ var Renderer3D = (function () {
     camera.updateProjectionMatrix();
   }
 
-  function update(joints, opts) {
+  function updateSegs(segs, opts) {
     opts = opts || {};
     var highlightIdx = opts.highlight;
     var focusMode = opts.focus || 'all';
@@ -115,7 +115,7 @@ var Renderer3D = (function () {
 
     var ghosting = focusMode === 'segment' && typeof highlightIdx === 'number';
 
-    Snake.layout3D(joints).forEach(function (seg) {
+    segs.forEach(function (seg) {
       var f = seg.f, b = seg.b;
       var v = new Float32Array([
         f[0][0],f[0][1],f[0][2],
@@ -171,7 +171,7 @@ var Renderer3D = (function () {
       }
     });
 
-    if (meshes.length) {
+    if (!opts.noFit && meshes.length) {
       var box = new THREE.Box3();
       var focusMesh = focusMode === 'segment' &&
         meshes.find(function (m) { return m.userData.segIdx === highlightIdx; });
@@ -197,6 +197,27 @@ var Renderer3D = (function () {
       }
       updateCamera();
     }
+  }
+
+  function update(joints, opts) {
+    updateSegs(Snake.layout3D(joints), opts);
+  }
+
+  // Fit the camera to encompass the given pre-computed segments without rebuilding meshes.
+  function fitToSegs(segs) {
+    if (!segs.length) return;
+    var box = new THREE.Box3();
+    segs.forEach(function (seg) {
+      seg.f.concat(seg.b).forEach(function (v) {
+        box.expandByPoint(new THREE.Vector3(v[0], v[1], v[2]));
+      });
+    });
+    fitToBox(box, 1.15, 3);
+    if (axesHelper) {
+      axesHelper.visible = true;
+      axesLabels.forEach(function (s) { s.visible = true; });
+    }
+    updateCamera();
   }
 
   // Position orbitCenter at box's center and pick a camera distance that
@@ -300,6 +321,8 @@ var Renderer3D = (function () {
   return {
     init: init,
     update: update,
+    updateSegs: updateSegs,
+    fitToSegs: fitToSegs,
     setEditor: function (cbs) { edCbs = cbs; },
     clearEditor: function () { edCbs = null; },
   };

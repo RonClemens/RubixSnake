@@ -200,11 +200,49 @@ var Snake = (function () {
     return segs;
   }
 
+  // Same as layout3D but the n-th joint is applied at fraction t [0,1].
+  // Returns segments 0..n. Useful for smooth fold animations.
+  function layout3DPartial(joints, n, t) {
+    var L = Math.SQRT1_2;
+    var segs = [];
+    segs.push({
+      idx: 0,
+      f: [[ 0, -L/2,  0.5], [-L,  L/2,  0.5], [ L,  L/2,  0.5]],
+      b: [[ 0, -L/2, -0.5], [-L,  L/2, -0.5], [ L,  L/2, -0.5]],
+    });
+    var limit = Math.min(n, joints.length);
+    for (var i = 1; i <= limit; i++) {
+      var prev = segs[i - 1];
+      var depthDir = vnorm(vsub(prev.f[0], prev.b[0]));
+      var other = prev.idx % 2 === 0 ? 2 : 1;
+      var axisPt = vmid(prev.f[0], prev.f[other]);
+      var pf = prev.f.map(function (v) { return _rotateAround(v, axisPt, depthDir, Math.PI); });
+      var pb = prev.b.map(function (v) { return _rotateAround(v, axisPt, depthDir, Math.PI); });
+      var jt = joints[i - 1];
+      if (jt === 'R' || jt === 'L' || jt === 'F') {
+        var baseAngle = jt === 'F' ? Math.PI : (jt === 'R' ? 1 : -1) * Math.PI / 2;
+        var frac = i === limit ? t : 1;
+        var angle = baseAngle * frac;
+        if (Math.abs(angle) > 1e-9) {
+          var inPlaneDir = vnorm(vsub(prev.f[other], prev.f[0]));
+          var hingeAxis = vnorm(vcross(depthDir, inPlaneDir));
+          var pivot = vmid(vmid(prev.f[0], prev.b[0]), vmid(prev.f[other], prev.b[other]));
+          pf = pf.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
+          pb = pb.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
+        }
+      }
+      segs.push({ idx: i, f: pf, b: pb });
+      applyXform(segs[i], prev);
+    }
+    return segs;
+  }
+
   return {
     COLORS: COLORS,
     segColor: segColor,
     layout2D: layout2D,
     layout3D: layout3D,
+    layout3DPartial: layout3DPartial,
     setSegTransform: setSegTransform,
     clearSegTransforms: clearSegTransforms,
     setSegColor: setSegColor,

@@ -28,6 +28,12 @@
   var edFocusAll = true;       // 3D camera: true = fit whole snake, false = zoom to edSeg
   var edRevealCount = 2;       // how many segments are revealed/built in the editor
   var engStep = 23;            // fold-by-fold step shown in Engine 3D/2D preview (0-23)
+  var engPlaying = false;
+  var engAnimRaf = null;
+  var engAnimTimer = null;
+  var edPlaying = false;
+  var edAnimTimer = null;
+  var edAnimRaf = null;
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
@@ -106,6 +112,131 @@
     if (activeShape && activeShape.id === id) activeShape = Shapes.getAll()[0] || null;
   }
 
+  // ── animation helpers ────────────────────────────────────────────────────────
+  function stopEngAnim() {
+    engPlaying = false;
+    if (engAnimRaf)   { cancelAnimationFrame(engAnimRaf); engAnimRaf = null; }
+    if (engAnimTimer) { clearTimeout(engAnimTimer); engAnimTimer = null; }
+    var btn = document.getElementById('eng-play');
+    if (btn) { btn.textContent = '▶ Play'; btn.style.color = '#3fb950'; }
+  }
+
+  function startEngAnim() {
+    stopEngAnim();
+    var joints = MovesEngine.getJoints() || (activeShape ? activeShape.joints.slice() : Array(23).fill('S'));
+    var v3 = document.getElementById('view3d');
+    if (v3) Renderer3D.init(v3);
+    engPlaying = true;
+    if (engStep >= 23) engStep = 0;
+
+    var playBtn = document.getElementById('eng-play');
+    if (playBtn) { playBtn.textContent = '⏸ Stop'; playBtn.style.color = '#f0883e'; }
+
+    // Fit camera once to the full 23-step snake so it stays fixed during animation
+    Renderer3D.fitToSegs(Snake.layout3DPartial(joints, 23, 1));
+
+    var tweenMs = 300;
+    var holdMs = 80;
+
+    function doStep() {
+      if (!engPlaying) return;
+      var step = engStep;
+      if (step > 23) { stopEngAnim(); return; }
+
+      // Update slider + label
+      var slider = document.getElementById('eng-slider');
+      if (slider) slider.value = step;
+      var lbl = document.getElementById('eng-step-lbl');
+      if (lbl) lbl.textContent = 'Step ' + step + ' / 23';
+      var info = document.getElementById('eng-step-info');
+      if (info) info.innerHTML = engineStepInfo(joints, step);
+
+      var jt = step > 0 ? joints[step - 1] : null;
+      var needsTween = jt && jt !== 'S';
+      var startTime = null;
+
+      function frame(now) {
+        if (!engPlaying) return;
+        if (!startTime) startTime = now;
+        var rawT = needsTween ? Math.min(1, (now - startTime) / tweenMs) : 1;
+        // smoothstep easing
+        var t = rawT * rawT * (3 - 2 * rawT);
+        Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true });
+        if (rawT < 1) {
+          engAnimRaf = requestAnimationFrame(frame);
+        } else {
+          engAnimTimer = setTimeout(function () {
+            if (!engPlaying) return;
+            engStep = step + 1;
+            if (engStep > 23) { engStep = 23; stopEngAnim(); return; }
+            doStep();
+          }, holdMs);
+        }
+      }
+
+      engAnimRaf = requestAnimationFrame(frame);
+    }
+
+    doStep();
+  }
+
+  function stopEdAnim() {
+    edPlaying = false;
+    if (edAnimRaf)   { cancelAnimationFrame(edAnimRaf); edAnimRaf = null; }
+    if (edAnimTimer) { clearTimeout(edAnimTimer); edAnimTimer = null; }
+    var btn = document.getElementById('ed-anim');
+    if (btn) { btn.textContent = '▶ Animate'; btn.style.color = '#58a6ff'; }
+  }
+
+  function startEdAnim() {
+    stopEdAnim();
+    var joints = activeShape ? activeShape.joints : [];
+    if (!joints.length) return;
+    var v3 = document.getElementById('editor-3d');
+    if (v3) Renderer3D.init(v3);
+    edPlaying = true;
+
+    var animBtn = document.getElementById('ed-anim');
+    if (animBtn) { animBtn.textContent = '⏸ Stop'; animBtn.style.color = '#f0883e'; }
+
+    // Fit camera to full snake once
+    Renderer3D.fitToSegs(Snake.layout3DPartial(joints.slice(0, edRevealCount - 1), edRevealCount - 1, 1));
+
+    var tweenMs = 280;
+    var holdMs = 100;
+    var step = 0; // current number of joints applied (segments = step+1)
+
+    function doStep() {
+      if (!edPlaying) return;
+      if (step > edRevealCount - 1) { stopEdAnim(); return; }
+
+      var jt = step > 0 ? joints[step - 1] : null;
+      var needsTween = jt && jt !== 'S';
+      var startTime = null;
+
+      function frame(now) {
+        if (!edPlaying) return;
+        if (!startTime) startTime = now;
+        var rawT = needsTween ? Math.min(1, (now - startTime) / tweenMs) : 1;
+        var t = rawT * rawT * (3 - 2 * rawT);
+        Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true });
+        if (rawT < 1) {
+          edAnimRaf = requestAnimationFrame(frame);
+        } else {
+          edAnimTimer = setTimeout(function () {
+            if (!edPlaying) return;
+            step++;
+            doStep();
+          }, holdMs);
+        }
+      }
+
+      edAnimRaf = requestAnimationFrame(frame);
+    }
+
+    doStep();
+  }
+
   // Shared "Import shape (JSON)" card — used by both the Guide intro and the Editor.
   function importCardHtml() {
     return '<div class="card">' +
@@ -136,6 +267,8 @@
   }
 
   function switchTab(t) {
+    stopEngAnim();
+    stopEdAnim();
     activeTab = t;
     document.getElementById('tab-guide').className  = 'tab' + (t === 'guide'  ? ' active' : '');
     document.getElementById('tab-engine').className = 'tab' + (t === 'engine' ? ' active' : '');
@@ -462,26 +595,28 @@
   }
 
   // ── ENGINE TAB ────────────────────────────────────────────────────────────
-  function engineStepInfo(joints) {
-    if (engStep < 1) {
+  function engineStepInfo(joints, step) {
+    if (step === undefined) step = engStep;
+    if (step < 1) {
       return '<div style="font-size:12px;color:#6e7681;margin-top:10px;text-align:center">Start of snake — segment 0 only</div>';
     }
-    var t = joints[engStep - 1], tc = UI[t].col, tbg = UI[t].bg;
-    var ai = engStep - 1, bi = engStep;
+    var t = joints[step - 1], tc = UI[t].col, tbg = UI[t].bg;
+    var ai = step - 1, bi = step;
     return '<div style="border:1.5px solid ' + tc + '44;background:' + tbg + ';border-radius:10px;padding:10px;margin-top:10px">' +
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
           '<div style="width:36px;height:36px;border-radius:8px;background:' + tc + '20;border:2px solid ' + tc + ';display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' + UI[t].em + '</div>' +
           '<div>' +
-            '<div style="font-size:14px;font-weight:800;color:' + tc + '">Joint ' + engStep + '/23 — ' + UI[t].lbl + '</div>' +
-            '<div style="font-size:11px;color:#6e7681;margin-top:1px">' + Snake.segColor(ai).n + ' → ' + Snake.segColor(bi).n + ' · ' + (pl(engStep) === 'vertical' ? '↕ Vertical' : '↔ Horizontal') + '</div>' +
+            '<div style="font-size:14px;font-weight:800;color:' + tc + '">Joint ' + step + '/23 — ' + UI[t].lbl + '</div>' +
+            '<div style="font-size:11px;color:#6e7681;margin-top:1px">' + Snake.segColor(ai).n + ' → ' + Snake.segColor(bi).n + ' · ' + (pl(step) === 'vertical' ? '↕ Vertical' : '↔ Horizontal') + '</div>' +
           '</div>' +
         '</div>' +
-        '<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:8px 4px">' + svgDiag(t, engStep, ai, bi) + '</div>' +
-        '<div style="background:rgba(0,0,0,.25);border-radius:7px;padding:9px 12px;margin-top:8px;font-size:13px;font-weight:700;color:' + tc + '">' + dirtxt(t, engStep) + '</div>' +
+        '<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:8px 4px">' + svgDiag(t, step, ai, bi) + '</div>' +
+        '<div style="background:rgba(0,0,0,.25);border-radius:7px;padding:9px 12px;margin-top:8px;font-size:13px;font-weight:700;color:' + tc + '">' + dirtxt(t, step) + '</div>' +
       '</div>';
   }
 
   function renderEngine() {
+    stopEngAnim();
     document.getElementById('navrow').style.display = 'none';
     var pg = document.getElementById('pg');
     var startJoints = activeShape ? activeShape.joints.slice() : Array(23).fill('S');
@@ -503,6 +638,7 @@
           '<button id="eng-prev" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9664;</button>' +
           '<input id="eng-slider" type="range" min="0" max="23" step="1" value="' + engStep + '" style="flex:1">' +
           '<button id="eng-next" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9654;</button>' +
+          '<button id="eng-play" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#3fb950;font-size:13px;font-weight:700;white-space:nowrap">&#9654; Play</button>' +
         '</div>' +
         '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700;margin-bottom:8px">Step ' + engStep + ' / 23</div>' +
         '<div id="view3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
@@ -519,6 +655,7 @@
     }
 
     function setStep(s) {
+      stopEngAnim();
       engStep = Math.max(0, Math.min(23, s));
       var slider = document.getElementById('eng-slider');
       if (slider) slider.value = engStep;
@@ -528,19 +665,28 @@
     }
 
     MovesEngine.init(document.getElementById('me-container'), startJoints, function (j) {
+      stopEngAnim();
       setTimeout(function () { refreshViews(j); }, 20);
     });
 
     document.getElementById('eng-prev').onclick = function () { setStep(engStep - 1); };
     document.getElementById('eng-next').onclick = function () { setStep(engStep + 1); };
     document.getElementById('eng-slider').oninput = function () { setStep(+this.value); };
+    document.getElementById('eng-play').onclick = function () {
+      if (engPlaying) { stopEngAnim(); } else { startEngAnim(); }
+    };
 
     // trigger initial draw
-    setTimeout(function () { refreshViews(MovesEngine.getJoints() || startJoints); }, 50);
+    setTimeout(function () {
+      var v3 = document.getElementById('view3d');
+      if (v3) Renderer3D.init(v3);
+      refreshViews(MovesEngine.getJoints() || startJoints);
+    }, 50);
   }
 
   // ── EDITOR TAB ────────────────────────────────────────────────────────────
   function renderEditor() {
+    stopEdAnim();
     var pg = document.getElementById('pg');
     var joints = activeShape ? activeShape.joints : [];
     var numSegs = edRevealCount;
@@ -581,7 +727,10 @@
 
     pg.innerHTML =
       '<div class="card" style="padding:10px">' +
-        '<div class="lbl">3D — tap segment to select &amp; drag to orbit</div>' +
+        '<div class="lbl" style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span>3D — tap segment to select &amp; drag to orbit</span>' +
+          '<button id="ed-anim" style="padding:5px 10px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#58a6ff;font-size:12px;font-weight:700">&#9654; Animate</button>' +
+        '</div>' +
         '<div id="editor-3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
       '</div>' +
       '<div class="card">' +
@@ -712,6 +861,12 @@
       renderEditor();
     });
 
+    // Animate button
+    var edAnimBtn = document.getElementById('ed-anim');
+    if (edAnimBtn) edAnimBtn.onclick = function () {
+      if (edPlaying) { stopEdAnim(); } else { startEdAnim(); }
+    };
+
     // 3D init + wire editor callbacks
     setTimeout(function () {
       var v3 = document.getElementById('editor-3d');
@@ -721,6 +876,7 @@
       Renderer3D.setEditor({
         onSelect: function (idx) {
           if (idx === edSeg && !edFocusAll) return;
+          stopEdAnim();
           edSeg = idx;
           edFocusAll = false;
           renderEditor();
