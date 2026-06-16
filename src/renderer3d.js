@@ -4,6 +4,7 @@
 var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], axesHelper = null, axesLabels = [], animFrame = null;
   var highlightMesh = null, glowMesh = null;
+  var invalidMeshes = [];
   var spherical = { theta: Math.PI, phi: Math.PI / 2, r: 4 };
   var orbitCenter = new THREE.Vector3();
 
@@ -112,6 +113,8 @@ var Renderer3D = (function () {
       glowMesh.material.dispose();
       glowMesh = null;
     }
+    invalidMeshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    invalidMeshes = [];
 
     var ghosting = focusMode === 'segment' && typeof highlightIdx === 'number';
 
@@ -169,6 +172,45 @@ var Renderer3D = (function () {
         glowMesh.renderOrder = 997;
         scene.add(glowMesh);
       }
+    });
+
+    // Orange outline + glow for invalid-action segments
+    (opts.invalidSegs || []).forEach(function (segIdx) {
+      var target = null;
+      for (var mi = 0; mi < meshes.length; mi++) {
+        if (meshes[mi].userData.segIdx === segIdx) { target = meshes[mi]; break; }
+      }
+      if (!target) return;
+      var geo = target.geometry;
+
+      var outline = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0xff7700, depthTest: false })
+      );
+      outline.renderOrder = 999;
+      scene.add(outline);
+      invalidMeshes.push(outline);
+
+      var pos = geo.attributes.position;
+      var cx = 0, cy = 0, cz = 0;
+      for (var vi = 0; vi < pos.count; vi++) {
+        cx += pos.getX(vi); cy += pos.getY(vi); cz += pos.getZ(vi);
+      }
+      cx /= pos.count; cy /= pos.count; cz /= pos.count;
+
+      var glowScale = 1.08;
+      var inv = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0xff7700,
+        transparent: true,
+        opacity: 0.22,
+        side: THREE.BackSide,
+        depthWrite: false,
+      }));
+      inv.position.set(cx * (1 - glowScale), cy * (1 - glowScale), cz * (1 - glowScale));
+      inv.scale.setScalar(glowScale);
+      inv.renderOrder = 998;
+      scene.add(inv);
+      invalidMeshes.push(inv);
     });
 
     if (!opts.noFit && meshes.length) {

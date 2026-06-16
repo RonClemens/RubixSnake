@@ -91,8 +91,10 @@
   //   • an enriched step array          [{segment,action,description}, ...]
   //   • a full shape object             {name, emoji, description, closing, joints}
   //   • a shape object with steps       {name, ..., steps:[{segment,action,...}]}
-  // Returns an error string on failure, or null on success.
-  function importShape(text, name) {
+  // Unknown action types are substituted with 'S' and recorded in shape.invalidJoints.
+  // Warnings (if any) are pushed into the optional `warns` array.
+  // Returns an error string on hard failure, or null on success.
+  function importShape(text, name, warns) {
     var parsed;
     try { parsed = JSON.parse(text); } catch (e) { return 'Invalid JSON: ' + e.message; }
 
@@ -100,17 +102,14 @@
 
     if (Array.isArray(parsed)) {
       if (parsed.length > 0 && parsed[0] !== null && typeof parsed[0] === 'object' && 'action' in parsed[0]) {
-        // Enriched step array
         var ea = fromEnrichedArr(parsed);
         joints = ea.joints; stepDescs = ea.descs;
       } else {
-        // Bare joints array
         joints = parsed;
       }
     } else if (parsed && typeof parsed === 'object') {
       shapeMeta = parsed;
       if (Array.isArray(parsed.steps) && parsed.steps.length > 0 && 'action' in parsed.steps[0]) {
-        // Shape object with enriched steps
         var es = fromEnrichedArr(parsed.steps);
         joints = es.joints; stepDescs = es.descs;
       } else {
@@ -122,11 +121,17 @@
       return 'Need 23 joint values (S/R/L/F) — got ' + (joints ? joints.length : 0);
     }
     joints = joints.slice(0, 23);
-    for (var i = 0; i < joints.length; i++) {
-      if (JOINT_TYPES.indexOf(joints[i]) < 0) {
-        return 'segment ' + (i + 1) + ' action "' + joints[i] + '" is not recognized — must be S, R, L, or F';
+
+    // Substitute unknown actions with 'S' and record them
+    var invalidJoints = [];
+    joints = joints.map(function (t, i) {
+      if (JOINT_TYPES.indexOf(t) < 0) {
+        invalidJoints.push({ index: i, original: t });
+        if (warns) warns.push('segment ' + (i + 1) + ' "' + t + '" → S');
+        return 'S';
       }
-    }
+      return t;
+    });
 
     var shape = {
       id: 'custom-' + Date.now(),
@@ -134,11 +139,11 @@
       emoji:       shapeMeta.emoji               || '✨',
       description: shapeMeta.description         || 'A custom imported shape.',
       closing:     shapeMeta.closing             || 'Close the two ends together to lock the shape.',
-      joints:      joints.slice(),
+      joints:      joints,
     };
-    if (stepDescs && stepDescs.some(function (d) { return d; })) {
-      shape.stepDescriptions = stepDescs;
-    }
+    if (invalidJoints.length)  shape.invalidJoints   = invalidJoints;
+    if (stepDescs && stepDescs.some(function (d) { return d; })) shape.stepDescriptions = stepDescs;
+
     Shapes.add(shape);
     var list = saveCustomShapes();
     list.push(shape);
@@ -169,6 +174,23 @@
         description: (stored && stored[i]) || stepDesc(t, i + 1),
       };
     });
+  }
+
+  // Returns all 0-indexed joint indices from activeShape that had unknown actions
+  function invalidJointIndices() {
+    return activeShape && activeShape.invalidJoints
+      ? activeShape.invalidJoints.map(function (j) { return j.index; })
+      : [];
+  }
+
+  // Returns segment indices (both sides of each invalid joint) visible when numJoints
+  // joints have been applied (segments 0..numJoints are visible).
+  function invalidSegsForStep(numJoints) {
+    var result = [];
+    invalidJointIndices().forEach(function (j) {
+      if (j < numJoints) { result.push(j); result.push(j + 1); }
+    });
+    return result;
   }
 
   function removeCustomShape(id) {
@@ -230,7 +252,7 @@
         var rawT = needsTween ? Math.min(1, (now - startTime) / tweenMs) : 1;
         // smoothstep easing
         var t = rawT * rawT * (3 - 2 * rawT);
-        Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true });
+        Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
         if (rawT < 1) {
           engAnimRaf = requestAnimationFrame(frame);
         } else {
@@ -288,7 +310,7 @@
         if (!startTime) startTime = now;
         var rawT = needsTween ? Math.min(1, (now - startTime) / tweenMs) : 1;
         var t = rawT * rawT * (3 - 2 * rawT);
-        Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true });
+        Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
         if (rawT < 1) {
           edAnimRaf = requestAnimationFrame(frame);
         } else {
@@ -327,11 +349,18 @@
       var text = document.getElementById('imp-json').value.trim();
       var name = document.getElementById('imp-name').value.trim();
       var err = document.getElementById('imp-err');
-      if (!text) { err.textContent = 'Paste a joints array or shape JSON first.'; return; }
-      var msg = importShape(text, name);
-      if (msg) { err.textContent = msg; return; }
-      err.textContent = '';
-      onSuccess();
+      if (!text) { err.style.color = '#f85149'; err.textContent = 'Paste a joints array or shape JSON first.'; return; }
+      var warns = [];
+      var msg = importShape(text, name, warns);
+      if (msg) { err.style.color = '#f85149'; err.textContent = msg; return; }
+      if (warns.length) {
+        err.style.color = '#ff7700';
+        err.textContent = '⚠ Imported with substitutions — ' + warns.join(', ') + '. Orange segments need reconciliation.';
+        setTimeout(onSuccess, 900);
+      } else {
+        err.textContent = '';
+        onSuccess();
+      }
     };
   }
 
@@ -529,13 +558,21 @@
           (isCustom ? '<button data-delid="' + s.id + '" title="Delete custom shape" style="width:44px;flex-shrink:0;background:rgba(248,81,73,.08);border:1.5px solid rgba(248,81,73,.35);border-radius:10px;color:#f85149;font-size:18px">&#128465;</button>' : '') +
         '</div>';
       }).join('');
+      var activeInvalidWarn = '';
+      if (activeShape && activeShape.invalidJoints && activeShape.invalidJoints.length) {
+        var warnList = activeShape.invalidJoints.map(function (j) {
+          return 'joint ' + (j.index + 1) + ' "' + j.original + '"';
+        }).join(', ');
+        activeInvalidWarn = '<div style="background:rgba(255,119,0,.1);border:1.5px solid #ff7700;border-radius:8px;padding:9px 12px;font-size:11px;color:#ff7700;font-weight:700;margin-top:8px">⚠ Unknown actions at ' + warnList + ' — treated as S. Open in Engine tab to correct.</div>';
+      }
+
       pg.innerHTML =
         '<div class="card" style="text-align:center;padding:22px 16px">' +
           '<div style="font-size:48px;margin-bottom:8px">🐍</div>' +
           '<div style="font-size:21px;font-weight:800;margin-bottom:6px">Rubix Snake Guide</div>' +
           '<p style="color:#8b949e;font-size:13px;line-height:1.55">Step-by-step folding instructions with 2D path view, fold diagrams, and AI photo verification.</p>' +
         '</div>' +
-        '<div class="card"><div class="lbl">Choose a shape</div>' + shapeList + '</div>' +
+        '<div class="card"><div class="lbl">Choose a shape</div>' + shapeList + activeInvalidWarn + '</div>' +
         '<button id="bstart" style="padding:15px;background:#238636;border-radius:12px;font-size:16px;font-weight:700;color:#fff;width:100%">Start → Joint 1</button>' +
         importCardHtml();
 
@@ -577,7 +614,7 @@
       document.getElementById('brst').onclick = function () { guideStep = 0; clearPhoto(); render(); };
       setTimeout(function () {
         var v3 = document.getElementById('done-3d');
-        if (v3) { Renderer3D.init(v3); Renderer3D.update(joints); }
+        if (v3) { Renderer3D.init(v3); Renderer3D.update(joints, { invalidSegs: invalidSegsForStep(joints.length) }); }
       }, 20);
       return;
     }
@@ -585,6 +622,12 @@
     // JOINT STEP
     var ai = guideStep - 1, bi = guideStep;
     var t = j.t, tc = UI[t].col, tbg = UI[t].bg;
+    var isInvalidStep = invalidJointIndices().indexOf(guideStep - 1) >= 0;
+    var invalidOriginal = '';
+    if (isInvalidStep && activeShape && activeShape.invalidJoints) {
+      var ij2 = activeShape.invalidJoints.filter(function (x) { return x.index === guideStep - 1; })[0];
+      if (ij2) invalidOriginal = ij2.original;
+    }
 
     var photoH;
     if (!iSrc) {
@@ -644,6 +687,7 @@
         '<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:10px 6px;margin-bottom:10px">' + svgDiag(t, j.id, ai, bi) + '</div>' +
         '<div style="background:rgba(0,0,0,.25);border-radius:7px;padding:9px 12px;font-size:13px;font-weight:700;color:' + tc + '">' + dirtxt(t, j.id) + '</div>' +
       '</div>' +
+      (isInvalidStep ? '<div style="background:rgba(255,119,0,.1);border:1.5px solid #ff7700;border-radius:10px;padding:10px 12px;font-size:12px;color:#ff7700;font-weight:700">⚠ Unknown action "' + invalidOriginal + '" at this joint — treated as S (straight). Use the Engine tab to set the correct fold.</div>' : '') +
       '<div class="card"><div class="lbl">📷 Photo check — after folding</div>' + photoH + '</div>' +
       verH + skipH;
 
@@ -657,9 +701,9 @@
 
     setTimeout(function () {
       var cv = document.getElementById('sc');
-      if (cv) Renderer2D.draw(cv, joints.slice(0, guideStep), guideStep);
+      if (cv) Renderer2D.draw(cv, joints.slice(0, guideStep), guideStep, invalidJointIndices());
       var v3 = document.getElementById('guide-3d');
-      if (v3) { Renderer3D.init(v3); Renderer3D.update(joints.slice(0, guideStep)); }
+      if (v3) { Renderer3D.init(v3); Renderer3D.update(joints.slice(0, guideStep), { invalidSegs: invalidSegsForStep(guideStep) }); }
     }, 20);
   }
 
@@ -716,9 +760,9 @@
 
     function refreshViews(j) {
       var cv = document.getElementById('ec');
-      if (cv) Renderer2D.draw(cv, j, engStep >= 1 ? engStep : null);
+      if (cv) Renderer2D.draw(cv, j, engStep >= 1 ? engStep : null, invalidJointIndices());
       var v3 = document.getElementById('view3d');
-      if (v3) { Renderer3D.init(v3); Renderer3D.update(j.slice(0, engStep)); }
+      if (v3) { Renderer3D.init(v3); Renderer3D.update(j.slice(0, engStep), { invalidSegs: invalidSegsForStep(engStep) }); }
       var info = document.getElementById('eng-step-info');
       if (info) info.innerHTML = engineStepInfo(j);
     }
@@ -879,7 +923,7 @@
         var val = document.getElementById('ed-rot-val');
         if (val) val.textContent = next + '°';
         edFocusAll = true;
-        Renderer3D.update(subJoints, { highlight: edSeg, focus: 'all' });
+        Renderer3D.update(subJoints, { highlight: edSeg, focus: 'all', invalidSegs: invalidSegsForStep(subJoints.length) });
         updateSeqReadout();
       };
     });
@@ -957,7 +1001,7 @@
       var v3 = document.getElementById('editor-3d');
       if (!v3) return;
       Renderer3D.init(v3);
-      Renderer3D.update(subJoints, { highlight: edSeg, focus: edFocusAll ? 'all' : 'segment' });
+      Renderer3D.update(subJoints, { highlight: edSeg, focus: edFocusAll ? 'all' : 'segment', invalidSegs: invalidSegsForStep(subJoints.length) });
       Renderer3D.setEditor({
         onSelect: function (idx) {
           if (idx === edSeg && !edFocusAll) return;

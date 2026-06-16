@@ -6,7 +6,7 @@
 
 var Renderer2D = (function () {
 
-  function draw(canvas, joints, highlightJoint) {
+  function draw(canvas, joints, highlightJoint, invalidJoints) {
     var W = canvas.width = canvas.offsetWidth || 340;
     var pad = 20;
     var N = 24;
@@ -31,6 +31,10 @@ var Renderer2D = (function () {
     var jid = (highlightJoint !== null && highlightJoint !== undefined) ? highlightJoint : -1;
     var UI = { S: '#58a6ff', R: '#f0883e', L: '#3fb950', F: '#a371f7' };
     var jColor = (jid >= 1 && jid <= 23) ? (UI[joints[jid - 1]] || '#fff') : '';
+
+    // Build set of segment indices adjacent to invalid joints (for orange glow)
+    var invSegSet = {};
+    (invalidJoints || []).forEach(function (j) { invSegSet[j] = true; invSegSet[j + 1] = true; });
 
     for (var i = 0; i < N; i++) {
       var isA = (i === jid - 1);
@@ -59,6 +63,18 @@ var Renderer2D = (function () {
 
       ctx.fillStyle = Snake.segColor(i).h;
       ctx.fill();
+
+      // Orange glow underlay for invalid segments (drawn before normal stroke)
+      if (invSegSet[i]) {
+        ctx.save();
+        ctx.shadowColor = '#ff7700';
+        ctx.shadowBlur = Math.max(12, sc * 0.6);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#ff7700';
+        ctx.stroke();
+        ctx.restore();
+      }
+
       ctx.lineWidth = (isA || isB) ? 2.5 : 0.8;
       ctx.strokeStyle = isA ? '#ffffff' : isB ? jColor : 'rgba(0,0,0,0.45)';
       ctx.stroke();
@@ -73,6 +89,26 @@ var Renderer2D = (function () {
         ctx.fillText(isA ? 'A' : 'B', lcx, lcy);
       }
     }
+
+    // Orange ! markers at invalid joint positions
+    (invalidJoints || []).forEach(function (j) {
+      if (j < 0 || j >= 23) return;
+      var mx = j * (TW / 2) + 3 * (TW / 4);
+      var my = TH / 2;
+      var r = Math.max(4, sc * 0.24);
+      ctx.beginPath();
+      ctx.arc(tx(mx), ty(my), r, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff7700';
+      ctx.fill();
+      ctx.strokeStyle = '#0d1117';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#0d1117';
+      ctx.font = 'bold ' + Math.max(7, Math.round(r * 1.1)) + 'px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('!', tx(mx), ty(my));
+    });
 
     // Joint marker: colored dot at midpoint of the shared edge between seg jid-1 and jid
     if (jid >= 1 && jid <= 23) {
