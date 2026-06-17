@@ -41,7 +41,7 @@
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
   var akey = localStorage.getItem('sak') || '';
-  var showSeams = localStorage.getItem('seams') === '1';
+  var showSeams = localStorage.getItem('seams') !== '0'; // on by default
 
   // ── init ───────────────────────────────────────────────────────────────────
   function init() {

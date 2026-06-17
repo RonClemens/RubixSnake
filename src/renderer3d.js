@@ -160,7 +160,7 @@ var Renderer3D = (function () {
       if (showSeams && !ghost) {
         var seam = new THREE.LineSegments(
           new THREE.EdgesGeometry(geo),
-          new THREE.LineBasicMaterial({ color: 0x30363d, transparent: true, opacity: 0.7 })
+          new THREE.LineBasicMaterial({ color: 0xc9d1d9, transparent: true, opacity: 0.55 })
         );
         seam.renderOrder = 1;
         scene.add(seam);
