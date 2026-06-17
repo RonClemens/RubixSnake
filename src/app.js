@@ -44,6 +44,55 @@
   var showSeams = localStorage.getItem('seams') !== '0'; // on by default
   var pausedStep = 0;          // guideStep saved when leaving a puzzle mid-way via #homebtn
   var pausedShapeId = null;    // activeShape.id this pausedStep belongs to
+  var collapsedCards = {};     // cardKey -> bool, which "card" frames the user has collapsed
+
+  // ── collapsible card frames ───────────────────────────────────────────────
+  // Every .card in #pg gets a click-to-collapse header automatically. Runs via
+  // a MutationObserver so it covers every render*()/renderEditor() call site,
+  // including the many internal re-renders that bypass the top-level render().
+  function enhanceCollapsibleCards() {
+    var pg = document.getElementById('pg');
+    if (!pg) return;
+    var seen = {};
+    pg.querySelectorAll('.card').forEach(function (card) {
+      if (card.children.length < 2) return; // nothing to hide
+      var header = card.children[0];
+      var label = (header.textContent || '').trim();
+      if (!label) return; // no meaningful header to click (e.g. spinner row)
+
+      var key = activeTab + ':' + label.slice(0, 40);
+      seen[key] = (seen[key] || 0) + 1;
+      if (seen[key] > 1) key += '#' + seen[key];
+
+      var body = document.createElement('div');
+      body.className = 'card-body-auto';
+      Array.prototype.slice.call(card.children, 1).forEach(function (el) { body.appendChild(el); });
+      card.appendChild(body);
+
+      var curPad = parseFloat(getComputedStyle(header).paddingRight) || 0;
+      header.style.position = 'relative';
+      header.style.paddingRight = (curPad + 16) + 'px';
+      header.style.cursor = 'pointer';
+      header.style.userSelect = 'none';
+      var chev = document.createElement('span');
+      chev.textContent = '▾';
+      chev.style.cssText = 'position:absolute;right:0;top:50%;transform:translateY(-50%);' +
+        'font-size:10px;color:#6e7681;transition:transform .2s;pointer-events:none';
+      header.appendChild(chev);
+
+      var collapsed = !!collapsedCards[key];
+      body.style.display = collapsed ? 'none' : '';
+      chev.style.transform = 'translateY(-50%)' + (collapsed ? ' rotate(-90deg)' : '');
+
+      header.onclick = function (e) {
+        if (e.target.closest && e.target.closest('button,input,a,select,label,textarea')) return;
+        var nowCollapsed = !collapsedCards[key];
+        collapsedCards[key] = nowCollapsed;
+        body.style.display = nowCollapsed ? 'none' : '';
+        chev.style.transform = 'translateY(-50%)' + (nowCollapsed ? ' rotate(-90deg)' : '');
+      };
+    });
+  }
 
   // ── init ───────────────────────────────────────────────────────────────────
   function init() {
@@ -51,6 +100,7 @@
     document.getElementById('ksave').onclick = saveKey;
     document.getElementById('bbk').onclick  = function () { navStep(-1); };
     document.getElementById('bfwd').onclick = function () { if (canFwd()) navStep(1); };
+    new MutationObserver(enhanceCollapsibleCards).observe(document.getElementById('pg'), { childList: true });
     document.getElementById('homebtn').onclick = function () {
       if (guideStep >= 1 && guideStep <= 23) {
         pausedStep = guideStep;
