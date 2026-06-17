@@ -277,8 +277,8 @@
     // Fit camera once to the full 23-step snake so it stays fixed during animation
     Renderer3D.fitToSegs(Snake.layout3DPartial(joints, 23, 1));
 
-    var tweenMs = 300 / animSpeed;
-    var holdMs = 80 / animSpeed;
+    var tweenMs = 1000 / animSpeed; // 1x = 1 second per segment move
+    var holdMs = 150 / animSpeed;
 
     function doStep() {
       if (!engPlaying) return;
@@ -346,8 +346,8 @@
     // Fit camera to full snake once
     Renderer3D.fitToSegs(Snake.layout3DPartial(joints.slice(0, edRevealCount - 1), edRevealCount - 1, 1));
 
-    var tweenMs = 280 / animSpeed;
-    var holdMs = 100 / animSpeed;
+    var tweenMs = 1000 / animSpeed; // 1x = 1 second per segment move
+    var holdMs = 150 / animSpeed;
     // 'step' mode replays only the most-recently-revealed joint's fold;
     // 'full' mode rebuilds the whole revealed snake from segment 0.
     var step = animMode === 'step' ? Math.max(0, edRevealCount - 1) : 0;
@@ -845,16 +845,19 @@
     pg.innerHTML =
       '<div class="card" style="position:sticky;top:0;z-index:5;padding:10px;box-shadow:0 8px 12px -6px rgba(0,0,0,.6)">' +
         '<div class="lbl">3D preview — drag to rotate</div>' +
-        '<div id="view3d" style="width:100%;height:230px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
+        '<div id="view3d" style="width:100%;height:200px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
         '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
           '<button id="eng-prev" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9664;</button>' +
           '<input id="eng-slider" type="range" min="0" max="23" step="1" value="' + engStep + '" style="flex:1">' +
           '<button id="eng-next" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9654;</button>' +
           '<button id="eng-play" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#3fb950;font-size:13px;font-weight:700;white-space:nowrap">&#9654; Play</button>' +
         '</div>' +
+        '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700">Step ' + engStep + ' / 23</div>' +
+      '</div>' +
+      '<div class="card" style="padding:10px">' +
+        '<div class="lbl">Playback options</div>' +
         animControlsHtml() +
-        '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700;margin-top:8px">Step ' + engStep + ' / 23</div>' +
-        '<canvas id="ec" style="width:100%;background:#0d1117;border-radius:6px;margin-top:8px"></canvas>' +
+        '<canvas id="ec" style="width:100%;background:#0d1117;border-radius:6px;margin-top:10px"></canvas>' +
       '</div>' +
       '<div class="card" style="padding:10px">' +
         '<div id="eng-step-info">' + engineStepInfo(joints) + '</div>' +
