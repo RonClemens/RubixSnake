@@ -42,6 +42,8 @@
   var busy = false, verRes = null, verOk = false;
   var akey = localStorage.getItem('sak') || '';
   var showSeams = localStorage.getItem('seams') !== '0'; // on by default
+  var pausedStep = 0;          // guideStep saved when leaving a puzzle mid-way via #homebtn
+  var pausedShapeId = null;    // activeShape.id this pausedStep belongs to
 
   // ── init ───────────────────────────────────────────────────────────────────
   function init() {
@@ -49,6 +51,16 @@
     document.getElementById('ksave').onclick = saveKey;
     document.getElementById('bbk').onclick  = function () { navStep(-1); };
     document.getElementById('bfwd').onclick = function () { if (canFwd()) navStep(1); };
+    document.getElementById('homebtn').onclick = function () {
+      if (guideStep >= 1 && guideStep <= 23) {
+        pausedStep = guideStep;
+        pausedShapeId = activeShape ? activeShape.id : null;
+      }
+      guideStep = 0;
+      clearPhoto();
+      if (activeTab !== 'guide') switchTab('guide');
+      else render();
+    };
 
     Renderer3D.setShowSeams(showSeams);
     document.getElementById('seamschk').checked = showSeams;
@@ -575,7 +587,15 @@
   }
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
+  function updateHeader() {
+    document.getElementById('apptitle').textContent =
+      activeShape ? (activeShape.emoji + ' ' + activeShape.name) : '🐍 Rubix Snake';
+    document.getElementById('homebtn').style.display =
+      (activeTab === 'guide' && guideStep >= 1 && guideStep <= 23) ? '' : 'none';
+  }
+
   function render() {
+    updateHeader();
     if (activeTab === 'guide') renderGuide();
     else if (activeTab === 'engine') renderEngine();
     else renderEditor();
@@ -641,6 +661,10 @@
           '</div>'
         : '';
       var startLabel = guideReverse ? 'Start ← from Joint 23' : 'Start → from Joint 1';
+      var canResume = pausedStep > 0 && activeShape && pausedShapeId === activeShape.id;
+      var resumeH = canResume
+        ? '<button id="bresume" style="padding:15px;background:#1f6feb;border-radius:12px;font-size:16px;font-weight:700;color:#fff;width:100%">▶ Resume — Joint ' + pausedStep + '/23</button>'
+        : '';
 
       pg.innerHTML =
         '<div class="card" style="text-align:center;padding:22px 16px">' +
@@ -648,6 +672,7 @@
           '<div style="font-size:21px;font-weight:800;margin-bottom:6px">Rubix Snake Guide</div>' +
           '<p style="color:#8b949e;font-size:13px;line-height:1.55">Step-by-step folding instructions with 2D path view, fold diagrams, and AI photo verification.</p>' +
         '</div>' +
+        resumeH +
         '<div class="card"><div class="lbl">Choose a shape</div>' + shapeList + activeInvalidWarn +
           '<div class="lbl" style="margin-top:12px">Folding direction</div>' +
           '<div style="display:flex;gap:6px">' +
@@ -661,7 +686,9 @@
 
       pg.querySelectorAll('[data-sid]').forEach(function (btn) {
         btn.onclick = function () {
-          activeShape = Shapes.getById(this.getAttribute('data-sid'));
+          var sid = this.getAttribute('data-sid');
+          if (sid !== pausedShapeId) { pausedStep = 0; pausedShapeId = null; }
+          activeShape = Shapes.getById(sid);
           guideReverse = false;
           render();
         };
@@ -670,14 +697,26 @@
         btn.onclick = function () {
           var id = this.getAttribute('data-delid');
           if (!confirm('Delete this custom shape? This can\'t be undone.')) return;
+          if (id === pausedShapeId) { pausedStep = 0; pausedShapeId = null; }
           removeCustomShape(id);
           render();
         };
       });
       document.getElementById('bdir-fwd').onclick = function () { guideReverse = false; render(); };
       document.getElementById('bdir-rev').onclick = function () { guideReverse = true; render(); };
-      document.getElementById('bstart').onclick = function () { guideStep = 1; clearPhoto(); render(); };
+      document.getElementById('bstart').onclick = function () {
+        pausedStep = 0; pausedShapeId = null;
+        guideStep = 1; clearPhoto(); render();
+      };
+      if (canResume) {
+        document.getElementById('bresume').onclick = function () {
+          guideStep = pausedStep;
+          pausedStep = 0; pausedShapeId = null;
+          clearPhoto(); render();
+        };
+      }
       wireImportCard(function () {
+        pausedStep = 0; pausedShapeId = null;
         activeShape = Shapes.getAll()[Shapes.getAll().length - 1];
         guideReverse = false;
         render();
@@ -709,7 +748,10 @@
         '</div>' +
         '<div class="card"><p style="font-size:14px;color:#c9d1d9;line-height:1.6">' + doneClosing + '<br><br><b style="color:#f0883e">Doesn\'t fit?</b> Mirror all R↔L from joint 1 — some snakes have opposite chirality.</p></div>' +
         '<button id="brst" style="padding:14px;background:#238636;border-radius:12px;font-size:15px;font-weight:700;color:#fff;width:100%">↺ Start Over</button>';
-      document.getElementById('brst').onclick = function () { guideStep = 0; guideReverse = false; clearPhoto(); render(); };
+      document.getElementById('brst').onclick = function () {
+        pausedStep = 0; pausedShapeId = null;
+        guideStep = 0; guideReverse = false; clearPhoto(); render();
+      };
       setTimeout(function () {
         var v3 = document.getElementById('done-3d');
         if (v3) { Renderer3D.init(v3); Renderer3D.update(joints, { invalidSegs: invalidSegsForStep(joints.length) }); }
@@ -807,9 +849,9 @@
         if (guideReverse) {
           // Show all 24 segments: first (23-guideStep) joints straight, last guideStep joints folded
           var revJts = Array(23 - guideStep).fill('S').concat(joints.slice(23 - guideStep, 23));
-          Renderer3D.update(revJts, { invalidSegs: invalidSegsForRevStep(guideStep) });
+          Renderer3D.update(revJts, { highlight: bi, invalidSegs: invalidSegsForRevStep(guideStep) });
         } else {
-          Renderer3D.update(joints.slice(0, guideStep), { invalidSegs: invalidSegsForStep(guideStep) });
+          Renderer3D.update(joints.slice(0, guideStep), { highlight: bi, invalidSegs: invalidSegsForStep(guideStep) });
         }
       }
     }, 20);
