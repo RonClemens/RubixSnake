@@ -35,6 +35,8 @@
   var edPlaying = false;
   var edAnimTimer = null;
   var edAnimRaf = null;
+  var animMode  = 'full';      // 'full' = play whole sequence, 'step' = play only the current/latest joint
+  var animSpeed = 1;           // playback speed multiplier: 0.25, 0.5, 1, 2
   var activeShape = null;      // shape object from Shapes library
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
@@ -225,6 +227,34 @@
   }
 
   // ── animation helpers ────────────────────────────────────────────────────────
+  // Shared "play mode" + "speed" control row, used by both the Engine and
+  // Editor 3D animate buttons.
+  function animControlsHtml() {
+    var modeBtns = [['full', 'Full Shape'], ['step', 'This Step']].map(function (m) {
+      var act = animMode === m[0];
+      return '<button data-animmode="' + m[0] + '" style="flex:1;padding:6px 4px;border-radius:6px;font-size:11px;font-weight:700;' +
+        (act ? 'background:rgba(88,166,255,.15);border:1.5px solid #58a6ff;color:#58a6ff'
+             : 'background:rgba(255,255,255,.04);border:1px solid #30363d;color:#6e7681') + '">' + m[1] + '</button>';
+    }).join('');
+    var speedBtns = [0.25, 0.5, 1, 2].map(function (s) {
+      var act = animSpeed === s;
+      return '<button data-animspeed="' + s + '" style="flex:1;padding:6px 4px;border-radius:6px;font-size:11px;font-weight:700;' +
+        (act ? 'background:rgba(63,185,80,.15);border:1.5px solid #3fb950;color:#3fb950'
+             : 'background:rgba(255,255,255,.04);border:1px solid #30363d;color:#6e7681') + '">' + s + 'x</button>';
+    }).join('');
+    return '<div style="display:flex;gap:6px;margin-top:8px">' + modeBtns + '</div>' +
+           '<div style="display:flex;gap:6px;margin-top:6px">' + speedBtns + '</div>';
+  }
+
+  function wireAnimControls(pg) {
+    pg.querySelectorAll('[data-animmode]').forEach(function (btn) {
+      btn.onclick = function () { animMode = this.getAttribute('data-animmode'); render(); };
+    });
+    pg.querySelectorAll('[data-animspeed]').forEach(function (btn) {
+      btn.onclick = function () { animSpeed = +this.getAttribute('data-animspeed'); render(); };
+    });
+  }
+
   function stopEngAnim() {
     engPlaying = false;
     if (engAnimRaf)   { cancelAnimationFrame(engAnimRaf); engAnimRaf = null; }
@@ -239,7 +269,7 @@
     var v3 = document.getElementById('view3d');
     if (v3) Renderer3D.init(v3);
     engPlaying = true;
-    if (engStep >= 23) engStep = 0;
+    if (animMode === 'full' && engStep >= 23) engStep = 0;
 
     var playBtn = document.getElementById('eng-play');
     if (playBtn) { playBtn.textContent = '⏸ Stop'; playBtn.style.color = '#f0883e'; }
@@ -247,8 +277,8 @@
     // Fit camera once to the full 23-step snake so it stays fixed during animation
     Renderer3D.fitToSegs(Snake.layout3DPartial(joints, 23, 1));
 
-    var tweenMs = 300;
-    var holdMs = 80;
+    var tweenMs = 300 / animSpeed;
+    var holdMs = 80 / animSpeed;
 
     function doStep() {
       if (!engPlaying) return;
@@ -276,6 +306,8 @@
         Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
         if (rawT < 1) {
           engAnimRaf = requestAnimationFrame(frame);
+        } else if (animMode === 'step') {
+          stopEngAnim();
         } else {
           engAnimTimer = setTimeout(function () {
             if (!engPlaying) return;
@@ -314,9 +346,11 @@
     // Fit camera to full snake once
     Renderer3D.fitToSegs(Snake.layout3DPartial(joints.slice(0, edRevealCount - 1), edRevealCount - 1, 1));
 
-    var tweenMs = 280;
-    var holdMs = 100;
-    var step = 0; // current number of joints applied (segments = step+1)
+    var tweenMs = 280 / animSpeed;
+    var holdMs = 100 / animSpeed;
+    // 'step' mode replays only the most-recently-revealed joint's fold;
+    // 'full' mode rebuilds the whole revealed snake from segment 0.
+    var step = animMode === 'step' ? Math.max(0, edRevealCount - 1) : 0;
 
     function doStep() {
       if (!edPlaying) return;
@@ -334,6 +368,8 @@
         Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
         if (rawT < 1) {
           edAnimRaf = requestAnimationFrame(frame);
+        } else if (animMode === 'step') {
+          stopEdAnim();
         } else {
           edAnimTimer = setTimeout(function () {
             if (!edPlaying) return;
@@ -816,7 +852,8 @@
           '<button id="eng-next" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9654;</button>' +
           '<button id="eng-play" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#3fb950;font-size:13px;font-weight:700;white-space:nowrap">&#9654; Play</button>' +
         '</div>' +
-        '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700">Step ' + engStep + ' / 23</div>' +
+        animControlsHtml() +
+        '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700;margin-top:8px">Step ' + engStep + ' / 23</div>' +
         '<canvas id="ec" style="width:100%;background:#0d1117;border-radius:6px;margin-top:8px"></canvas>' +
       '</div>' +
       '<div class="card" style="padding:10px">' +
@@ -871,6 +908,7 @@
     document.getElementById('eng-play').onclick = function () {
       if (engPlaying) { stopEngAnim(); } else { startEngAnim(); }
     };
+    wireAnimControls(pg);
 
     // trigger initial draw
     setTimeout(function () {
@@ -928,6 +966,7 @@
           '<button id="ed-anim" style="padding:5px 10px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#58a6ff;font-size:12px;font-weight:700">&#9654; Animate</button>' +
         '</div>' +
         '<div id="editor-3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
+        animControlsHtml() +
       '</div>' +
       '<div class="card">' +
         '<div class="lbl" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
@@ -1078,6 +1117,7 @@
     if (edAnimBtn) edAnimBtn.onclick = function () {
       if (edPlaying) { stopEdAnim(); } else { startEdAnim(); }
     };
+    wireAnimControls(pg);
 
     // 3D init + wire editor callbacks
     setTimeout(function () {
