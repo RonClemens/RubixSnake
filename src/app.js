@@ -293,14 +293,15 @@
       var info = document.getElementById('eng-step-info');
       if (info) info.innerHTML = engineStepInfo(joints, step);
 
-      var jt = step > 0 ? joints[step - 1] : null;
-      var needsTween = jt && jt !== 'S';
       var startTime = null;
 
       function frame(now) {
         if (!engPlaying) return;
         if (!startTime) startTime = now;
-        var rawT = needsTween ? Math.min(1, (now - startTime) / tweenMs) : 1;
+        // Pace every step (including straight 'S' joints, which have no
+        // visible rotation) by the same tweenMs so 1x always means 1
+        // second per segment, regardless of fold type.
+        var rawT = Math.min(1, (now - startTime) / tweenMs);
         // smoothstep easing
         var t = rawT * rawT * (3 - 2 * rawT);
         Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
@@ -356,14 +357,14 @@
       if (!edPlaying) return;
       if (step > edRevealCount - 1) { stopEdAnim(); return; }
 
-      var jt = step > 0 ? joints[step - 1] : null;
-      var needsTween = jt && jt !== 'S';
       var startTime = null;
 
       function frame(now) {
         if (!edPlaying) return;
         if (!startTime) startTime = now;
-        var rawT = needsTween ? Math.min(1, (now - startTime) / tweenMs) : 1;
+        // Pace every step (including straight 'S' joints) by tweenMs so
+        // 1x always means 1 second per segment, regardless of fold type.
+        var rawT = Math.min(1, (now - startTime) / tweenMs);
         var t = rawT * rawT * (3 - 2 * rawT);
         Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
         if (rawT < 1) {
