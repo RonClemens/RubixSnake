@@ -5,6 +5,8 @@ var Renderer3D = (function () {
   var scene, camera, renderer, meshes = [], axesHelper = null, axesLabels = [], animFrame = null;
   var highlightMesh = null, glowMesh = null;
   var invalidMeshes = [];
+  var seamMeshes = [];
+  var showSeams = false;
   var spherical = { theta: Math.PI, phi: Math.PI / 2, r: 4 };
   var orbitCenter = new THREE.Vector3();
 
@@ -115,6 +117,8 @@ var Renderer3D = (function () {
     }
     invalidMeshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     invalidMeshes = [];
+    seamMeshes.forEach(function (m) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    seamMeshes = [];
 
     var ghosting = focusMode === 'segment' && typeof highlightIdx === 'number';
 
@@ -133,10 +137,18 @@ var Renderer3D = (function () {
       geo.setIndex(PRISM_IDX);
       var isHighlighted = seg.idx === highlightIdx;
       var ghost = ghosting && !isHighlighted;
-      var mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+      // MeshPhysicalMaterial's clearcoat adds a thin glossy layer that
+      // catches a bright specular line along each flat-shaded facet edge,
+      // faking the soft highlight a tiny rounded fillet would produce
+      // without altering the underlying sharp-edged geometry.
+      var mesh = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
         color: new THREE.Color(Snake.segColor(seg.idx).h),
-        shininess: 60,
+        metalness: 0.1,
+        roughness: 0.5,
         flatShading: true,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.25,
+        reflectivity: 0.3,
         transparent: ghost,
         opacity: ghost ? 0.15 : 1,
         depthWrite: !ghost,
@@ -144,6 +156,16 @@ var Renderer3D = (function () {
       mesh.userData.segIdx = seg.idx;
       scene.add(mesh);
       meshes.push(mesh);
+
+      if (showSeams && !ghost) {
+        var seam = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geo),
+          new THREE.LineBasicMaterial({ color: 0x30363d, transparent: true, opacity: 0.7 })
+        );
+        seam.renderOrder = 1;
+        scene.add(seam);
+        seamMeshes.push(seam);
+      }
 
       if (isHighlighted) {
         highlightMesh = new THREE.LineSegments(
@@ -371,5 +393,6 @@ var Renderer3D = (function () {
     fitToSegs: fitToSegs,
     setEditor: function (cbs) { edCbs = cbs; },
     clearEditor: function () { edCbs = null; },
+    setShowSeams: function (v) { showSeams = !!v; },
   };
 })();

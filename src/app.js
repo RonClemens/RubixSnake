@@ -39,6 +39,7 @@
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
   var akey = localStorage.getItem('sak') || '';
+  var showSeams = localStorage.getItem('seams') === '1';
 
   // ── init ───────────────────────────────────────────────────────────────────
   function init() {
@@ -46,6 +47,15 @@
     document.getElementById('ksave').onclick = saveKey;
     document.getElementById('bbk').onclick  = function () { navStep(-1); };
     document.getElementById('bfwd').onclick = function () { if (canFwd()) navStep(1); };
+
+    Renderer3D.setShowSeams(showSeams);
+    document.getElementById('seamschk').checked = showSeams;
+    document.getElementById('seamschk').onchange = function (e) {
+      showSeams = e.target.checked;
+      localStorage.setItem('seams', showSeams ? '1' : '0');
+      Renderer3D.setShowSeams(showSeams);
+      render();
+    };
 
     document.getElementById('tab-guide').onclick  = function () { switchTab('guide'); };
     document.getElementById('tab-engine').onclick = function () { switchTab('engine'); };

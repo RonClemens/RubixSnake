@@ -11,7 +11,9 @@ button:active{opacity:.8}
 #pbar{height:3px;background:#21262d}
 #pfill{height:100%;width:0%;background:linear-gradient(90deg,#2980b9,#e67e22,#e91e63,#c0392b,#27ae60);transition:width .3s}
 #navrow{padding:0 12px 10px;display:none;gap:8px}
-#kpanel{padding:0 14px 12px;display:none;gap:8px;align-items:center}
+#kpanel{padding:0 14px 12px;display:none;flex-direction:column;gap:8px}
+#kpanel-row{display:flex;gap:8px;align-items:center}
+#kpanel-opts{display:flex;gap:6px;align-items:center;font-size:12px;color:#8b949e}
 
 /* tab bar */
 #tabs{display:flex;border-bottom:1px solid #21262d;background:#161b22;flex-shrink:0}
