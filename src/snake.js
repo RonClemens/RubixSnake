@@ -38,6 +38,71 @@ var Snake = (function () {
     return [a[0]/len, a[1]/len, a[2]/len];
   }
   function vmid(a, b) { return [(a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2]; }
+  function vsafeNorm(a) {
+    var len = Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+    if (len < 1e-9) return null;
+    return [a[0]/len, a[1]/len, a[2]/len];
+  }
+
+  // ── self-intersection detection ─────────────────────────────────────────────
+  // Candidate separating-axis directions for a triangular prism: the depth
+  // direction (normal to the two triangular caps) plus the normal of each of
+  // the 3 rectangular side faces (cross of depth direction and that face's
+  // in-plane edge).
+  function _segAxes(seg) {
+    var depthDir = vsafeNorm(vsub(seg.f[0], seg.b[0]));
+    var axes = depthDir ? [depthDir] : [];
+    for (var i = 0; i < 3; i++) {
+      var j = (i + 1) % 3;
+      var edge = vsafeNorm(vsub(seg.f[j], seg.f[i]));
+      if (!edge || !depthDir) continue;
+      var n = vsafeNorm(vcross(depthDir, edge));
+      if (n) axes.push(n);
+    }
+    return axes;
+  }
+
+  function _projectExtent(verts, axis) {
+    var min = Infinity, max = -Infinity;
+    verts.forEach(function (v) {
+      var d = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
+      if (d < min) min = d;
+      if (d > max) max = d;
+    });
+    return [min, max];
+  }
+
+  // Separating Axis Theorem test (face normals only) for two triangular-prism
+  // segments. A small epsilon tolerance means faces that merely touch (as
+  // adjacent, correctly-mated segments would) are NOT reported as overlapping.
+  function segsOverlap(a, b) {
+    var vertsA = a.f.concat(a.b), vertsB = b.f.concat(b.b);
+    var axes = _segAxes(a).concat(_segAxes(b));
+    var EPS = 1e-6;
+    for (var i = 0; i < axes.length; i++) {
+      var axis = axes[i];
+      var exA = _projectExtent(vertsA, axis);
+      var exB = _projectExtent(vertsB, axis);
+      if (exA[1] < exB[0] + EPS || exB[1] < exA[0] + EPS) return false;
+    }
+    return true;
+  }
+
+  // Scan all non-adjacent segment pairs (adjacent segments share a mating
+  // face by construction, so they're skipped) and return the idx of every
+  // segment involved in at least one geometric overlap.
+  function findOverlaps(segs) {
+    var hit = {};
+    for (var i = 0; i < segs.length; i++) {
+      for (var k = i + 2; k < segs.length; k++) {
+        if (segsOverlap(segs[i], segs[k])) {
+          hit[segs[i].idx] = true;
+          hit[segs[k].idx] = true;
+        }
+      }
+    }
+    return Object.keys(hit).map(Number);
+  }
 
   // ── segment rotation overrides (used by the editor tab) ────────────────────
   // Each segment i >= 1 can be rotated about the hinge axis of the joint
@@ -243,6 +308,7 @@ var Snake = (function () {
     layout2D: layout2D,
     layout3D: layout3D,
     layout3DPartial: layout3DPartial,
+    findOverlaps: findOverlaps,
     setSegTransform: setSegTransform,
     clearSegTransforms: clearSegTransforms,
     setSegColor: setSegColor,

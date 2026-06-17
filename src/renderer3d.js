@@ -174,8 +174,12 @@ var Renderer3D = (function () {
       }
     });
 
-    // Orange outline + glow for invalid-action segments
-    (opts.invalidSegs || []).forEach(function (segIdx) {
+    // Orange outline + glow for invalid-action segments and for any segments
+    // geometrically overlapping a non-adjacent segment (self-intersection).
+    var highlightSet = {};
+    (opts.invalidSegs || []).forEach(function (segIdx) { highlightSet[segIdx] = true; });
+    Snake.findOverlaps(segs).forEach(function (segIdx) { highlightSet[segIdx] = true; });
+    Object.keys(highlightSet).map(Number).forEach(function (segIdx) {
       var target = null;
       for (var mi = 0; mi < meshes.length; mi++) {
         if (meshes[mi].userData.segIdx === segIdx) { target = meshes[mi]; break; }
