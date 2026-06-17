@@ -807,50 +807,62 @@
     var joints = MovesEngine.getJoints() || startJoints;
 
     pg.innerHTML =
-      '<div class="card">' +
-        '<div class="lbl">Moves Engine — build a new shape</div>' +
-        '<p style="font-size:12px;color:#6e7681;margin-bottom:10px">Tap any joint to cycle S → R → L. Watch the 2D + 3D views update live.</p>' +
-        '<div id="me-container"></div>' +
-      '</div>' +
-      '<div class="card" style="padding:10px">' +
-        '<div class="lbl">2D path preview</div>' +
-        '<canvas id="ec" style="width:100%;background:#0d1117;border-radius:6px"></canvas>' +
-      '</div>' +
-      '<div class="card" style="padding:10px">' +
-        '<div class="lbl">Fold-by-fold 3D preview — drag to rotate</div>' +
+      '<div class="card" style="position:sticky;top:0;z-index:5;padding:10px;box-shadow:0 8px 12px -6px rgba(0,0,0,.6)">' +
+        '<div class="lbl">3D preview — drag to rotate</div>' +
+        '<div id="view3d" style="width:100%;height:230px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
         '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
           '<button id="eng-prev" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9664;</button>' +
           '<input id="eng-slider" type="range" min="0" max="23" step="1" value="' + engStep + '" style="flex:1">' +
           '<button id="eng-next" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#c9d1d9;font-size:13px;font-weight:700">&#9654;</button>' +
           '<button id="eng-play" style="padding:8px 12px;background:#21262d;border:1px solid #30363d;border-radius:7px;color:#3fb950;font-size:13px;font-weight:700;white-space:nowrap">&#9654; Play</button>' +
         '</div>' +
-        '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700;margin-bottom:8px">Step ' + engStep + ' / 23</div>' +
-        '<div id="view3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
+        '<div id="eng-step-lbl" style="text-align:center;font-size:12px;color:#8b949e;font-weight:700">Step ' + engStep + ' / 23</div>' +
+        '<canvas id="ec" style="width:100%;background:#0d1117;border-radius:6px;margin-top:8px"></canvas>' +
+      '</div>' +
+      '<div class="card" style="padding:10px">' +
         '<div id="eng-step-info">' + engineStepInfo(joints) + '</div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="lbl">Moves Engine — build a new shape</div>' +
+        '<p style="font-size:12px;color:#6e7681;margin-bottom:10px">Tap any joint to cycle S → R → L → F. The 3D + 2D views above jump straight to that joint so you can see the change immediately.</p>' +
+        '<div id="me-container"></div>' +
       '</div>';
 
-    function refreshViews(j) {
+    function refreshViews(j, highlightSeg) {
       var cv = document.getElementById('ec');
       if (cv) Renderer2D.draw(cv, j, engStep >= 1 ? engStep : null, invalidJointIndices());
       var v3 = document.getElementById('view3d');
-      if (v3) { Renderer3D.init(v3); Renderer3D.update(j.slice(0, engStep), { invalidSegs: invalidSegsForStep(engStep) }); }
+      if (v3) {
+        Renderer3D.init(v3);
+        Renderer3D.update(j.slice(0, engStep), {
+          invalidSegs: invalidSegsForStep(engStep),
+          highlight: highlightSeg,
+        });
+      }
       var info = document.getElementById('eng-step-info');
       if (info) info.innerHTML = engineStepInfo(j);
     }
 
-    function setStep(s) {
+    function setStep(s, highlightSeg) {
       stopEngAnim();
       engStep = Math.max(0, Math.min(23, s));
       var slider = document.getElementById('eng-slider');
       if (slider) slider.value = engStep;
       var lbl = document.getElementById('eng-step-lbl');
       if (lbl) lbl.textContent = 'Step ' + engStep + ' / 23';
-      refreshViews(MovesEngine.getJoints() || startJoints);
+      refreshViews(MovesEngine.getJoints() || startJoints, highlightSeg);
     }
 
-    MovesEngine.init(document.getElementById('me-container'), startJoints, function (j) {
+    MovesEngine.init(document.getElementById('me-container'), startJoints, function (j, changedJointIdx) {
       stopEngAnim();
-      setTimeout(function () { refreshViews(j); }, 20);
+      if (typeof changedJointIdx === 'number') {
+        // Jump the preview straight to the joint that was just edited, with
+        // its segment highlighted, so the user sees the effect without
+        // having to scroll or scrub the slider.
+        setStep(changedJointIdx + 1, changedJointIdx + 1);
+      } else {
+        setTimeout(function () { refreshViews(j); }, 20);
+      }
     });
 
     document.getElementById('eng-prev').onclick = function () { setStep(engStep - 1); };

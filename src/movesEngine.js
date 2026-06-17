@@ -62,7 +62,7 @@ var MovesEngine = (function () {
         var ji = parseInt(this.getAttribute('data-ji'));
         cycleJoint(ji);
         render(container);
-        if (onChangeCb) onChangeCb(currentJoints.slice());
+        if (onChangeCb) onChangeCb(currentJoints.slice(), ji);
       });
     });
 
