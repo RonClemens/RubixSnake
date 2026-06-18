@@ -28,6 +28,7 @@
   var edXf  = {};              // per-segment rotation overrides { id: degrees }
   var edFocusAll = true;       // 3D camera: true = fit whole snake, false = zoom to edSeg
   var edRevealCount = 2;       // how many segments are revealed/built in the editor
+  var edBuildDir = 'fwd';      // 'fwd' = build head-first (0→23), 'rev' = build tail-first (23→0)
   var engStep = 23;            // fold-by-fold step shown in Engine 3D/2D preview (0-23)
   var engPlaying = false;
   var engAnimRaf = null;
@@ -426,18 +427,27 @@
     var animBtn = document.getElementById('ed-anim');
     if (animBtn) { animBtn.textContent = '⏸ Stop'; animBtn.style.color = '#f0883e'; }
 
-    // Fit camera to full snake once
-    Renderer3D.fitToSegs(Snake.layout3DPartial(joints.slice(0, edRevealCount - 1), edRevealCount - 1, 1));
+    var total = joints.length + 1;
+    var dirRev = edBuildDir === 'rev';
+    var revStart = total - edRevealCount;
+
+    // Fit camera to the currently-revealed window once.
+    Renderer3D.fitToSegs(dirRev
+      ? Snake.layout3D(joints).slice(revStart)
+      : Snake.layout3DPartial(joints.slice(0, edRevealCount - 1), edRevealCount - 1, 1));
 
     var tweenMs = 1000 / animSpeed; // 1x = 1 second per segment move
     var holdMs = 150 / animSpeed;
     // 'step' mode replays only the most-recently-revealed joint's fold;
-    // 'full' mode rebuilds the whole revealed snake from segment 0.
-    var step = animMode === 'step' ? Math.max(0, edRevealCount - 1) : 0;
+    // 'full' mode rebuilds the whole revealed window from a single segment,
+    // walking outward in the direction the snake was actually built in.
+    var m = animMode === 'step'
+      ? (dirRev ? revStart : Math.max(0, edRevealCount - 1))
+      : (dirRev ? total - 1 : 0);
 
     function doStep() {
       if (!edPlaying) return;
-      if (step > edRevealCount - 1) { stopEdAnim(); return; }
+      if (dirRev ? m < revStart : m > edRevealCount - 1) { stopEdAnim(); return; }
 
       var startTime = null;
 
@@ -448,7 +458,11 @@
         // 1x always means 1 second per segment, regardless of fold type.
         var rawT = Math.min(1, (now - startTime) / tweenMs);
         var t = rawT * rawT * (3 - 2 * rawT);
-        Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
+        var segs = dirRev
+          ? Snake.layout3DFrac(joints, m, t).slice(m)
+          : Snake.layout3DPartial(joints, m, t);
+        var invalid = dirRev ? invalidSegsForRevStep(total - 1 - m) : invalidSegsForStep(m);
+        Renderer3D.updateSegs(segs, { noFit: true, invalidSegs: invalid });
         if (rawT < 1) {
           edAnimRaf = requestAnimationFrame(frame);
         } else if (animMode === 'step') {
@@ -456,7 +470,7 @@
         } else {
           edAnimTimer = setTimeout(function () {
             if (!edPlaying) return;
-            step++;
+            m += dirRev ? -1 : 1;
             doStep();
           }, holdMs);
         }
@@ -1091,12 +1105,22 @@
     stopEdAnim();
     var pg = document.getElementById('pg');
     var joints = activeShape ? activeShape.joints : [];
+    var total = joints.length + 1;
+    var dirRev = edBuildDir === 'rev';
     var numSegs = edRevealCount;
+    var revStart = total - edRevealCount;
     var subJoints = joints.slice(0, edRevealCount - 1);
     var xf = edXf[edSeg] || 0;
 
+    var visibleIdxs = [];
+    if (dirRev) {
+      for (var vi = total - 1; vi >= revStart; vi--) visibleIdxs.push(vi);
+    } else {
+      for (var vi = 0; vi < numSegs; vi++) visibleIdxs.push(vi);
+    }
+
     var segBtns = '';
-    for (var i = 0; i < numSegs; i++) {
+    visibleIdxs.forEach(function (i) {
       var sc = Snake.segColor(i).h;
       var active = i === edSeg;
       segBtns += '<button data-edid="' + i + '" style="display:flex;align-items:center;gap:6px;padding:7px 11px;border-radius:8px;' +
@@ -1104,6 +1128,16 @@
         'border:' + (active ? '1.5px solid ' + sc : '1px solid #30363d') + ';color:#fff;font-size:12px;font-weight:' + (active ? '700' : '400') + '">' +
         '<span style="width:11px;height:11px;border-radius:3px;background:' + sc + ';display:inline-block;flex-shrink:0"></span>' +
         'Seg&nbsp;' + i + '</button>';
+    });
+
+    // In reverse mode the revealed window is the chain's tail end, computed
+    // off the same fixed segment-0 anchor as the full shape, then sliced down
+    // to just the visible segments — so it needs updateSegs (precomputed
+    // segs), not update (which always rebuilds from segment 0 alone).
+    function edInvalid() { return dirRev ? invalidSegsForRevStep(edRevealCount - 1) : invalidSegsForStep(subJoints.length); }
+    function edDraw(opts) {
+      if (dirRev) Renderer3D.updateSegs(Snake.layout3D(joints).slice(revStart), opts);
+      else Renderer3D.update(subJoints, opts);
     }
 
     function rotRow(rval) {
@@ -1116,16 +1150,27 @@
     }
 
     // "+ Add Segment" — only when there is a next joint left to reveal.
+    var nextIdx = dirRev ? revStart - 1 : edRevealCount;
     var addCardH = '';
     if (edRevealCount <= joints.length) {
       var swatches = Snake.COLORS.map(function (c) {
         return '<button data-addcolor="' + c.h + '" title="' + c.n + '" style="width:36px;height:36px;border-radius:8px;background:' + c.h + ';border:1.5px solid rgba(255,255,255,.2);cursor:pointer"></button>';
       }).join('');
       addCardH = '<div class="card">' +
-        '<div class="lbl">+ Add Segment ' + edRevealCount + ' — pick a color</div>' +
+        '<div class="lbl">+ Add Segment ' + nextIdx + ' — pick a color</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' + swatches + '</div>' +
       '</div>';
     }
+
+    var dirAct = 'background:rgba(88,166,255,.12);border:1.5px solid #58a6ff;color:#58a6ff';
+    var dirInact = 'background:rgba(255,255,255,.04);border:1.5px solid #30363d;color:#6e7681';
+    var buildDirH = '<div class="card">' +
+      '<div class="lbl">Build direction</div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button id="ed-dir-fwd" style="flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;' + (!dirRev ? dirAct : dirInact) + '">↗ Head-first 0 → 23</button>' +
+        '<button id="ed-dir-rev" style="flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:700;' + (dirRev ? dirAct : dirInact) + '">↙ Tail-first 23 → 0</button>' +
+      '</div>' +
+    '</div>';
 
     pg.innerHTML =
       '<div class="card" style="padding:10px">' +
@@ -1136,6 +1181,7 @@
         '<div id="editor-3d" style="width:100%;height:240px;border-radius:8px;overflow:hidden;background:#0d1117;touch-action:none"></div>' +
         animControlsHtml() +
       '</div>' +
+      buildDirH +
       '<div class="card">' +
         '<div class="lbl" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
           '<span>Segment</span>' +
@@ -1189,11 +1235,27 @@
       renderEditor();
     };
 
+    // Build direction — switching resets progress, since reveal order flips.
+    function switchEdDir(dir) {
+      if (edBuildDir === dir) return;
+      var hasProgress = edRevealCount > 2 || Object.keys(edXf).length > 0;
+      if (hasProgress && !confirm('Switch build direction? This resets the segments and rotations you\'ve built so far.')) return;
+      edBuildDir = dir;
+      edRevealCount = 2;
+      edXf = {};
+      Snake.clearSegTransforms();
+      edSeg = dir === 'rev' ? total - 1 : 0;
+      edFocusAll = true;
+      renderEditor();
+    }
+    document.getElementById('ed-dir-fwd').onclick = function () { switchEdDir('fwd'); };
+    document.getElementById('ed-dir-rev').onclick = function () { switchEdDir('rev'); };
+
     // Add segment — pick a color for the next segment in the chain
     pg.querySelectorAll('[data-addcolor]').forEach(function (btn) {
       btn.onclick = function () {
         var hex = this.getAttribute('data-addcolor');
-        var newIdx = edRevealCount;
+        var newIdx = nextIdx;
         Snake.setSegColor(newIdx, hex);
         edRevealCount++;
         edSeg = newIdx;
@@ -1213,7 +1275,7 @@
         var val = document.getElementById('ed-rot-val');
         if (val) val.textContent = next + '°';
         edFocusAll = true;
-        Renderer3D.update(subJoints, { highlight: edSeg, focus: 'all', invalidSegs: invalidSegsForStep(subJoints.length) });
+        edDraw({ highlight: edSeg, focus: 'all', invalidSegs: edInvalid() });
         updateSeqReadout();
       };
     });
@@ -1292,7 +1354,7 @@
       var v3 = document.getElementById('editor-3d');
       if (!v3) return;
       Renderer3D.init(v3);
-      Renderer3D.update(subJoints, { highlight: edSeg, focus: edFocusAll ? 'all' : 'segment', invalidSegs: invalidSegsForStep(subJoints.length) });
+      edDraw({ highlight: edSeg, focus: edFocusAll ? 'all' : 'segment', invalidSegs: edInvalid() });
       Renderer3D.setEditor({
         onSelect: function (idx) {
           if (idx === edSeg && !edFocusAll) return;
