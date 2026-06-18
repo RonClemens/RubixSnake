@@ -427,27 +427,24 @@
     var animBtn = document.getElementById('ed-anim');
     if (animBtn) { animBtn.textContent = '⏸ Stop'; animBtn.style.color = '#f0883e'; }
 
-    var total = joints.length + 1;
     var dirRev = edBuildDir === 'rev';
-    var revStart = total - edRevealCount;
 
-    // Fit camera to the currently-revealed window once.
+    // Fit camera once. Reverse mode always shows all 24 segments (unedited
+    // ones forced straight), so it fits the full chain, not just a window.
     Renderer3D.fitToSegs(dirRev
-      ? Snake.layout3D(joints).slice(revStart)
+      ? Snake.layout3D(reverseJoints(joints, edRevealCount - 1))
       : Snake.layout3DPartial(joints.slice(0, edRevealCount - 1), edRevealCount - 1, 1));
 
     var tweenMs = 1000 / animSpeed; // 1x = 1 second per segment move
     var holdMs = 150 / animSpeed;
-    // 'step' mode replays only the most-recently-revealed joint's fold;
-    // 'full' mode rebuilds the whole revealed window from a single segment,
-    // walking outward in the direction the snake was actually built in.
-    var m = animMode === 'step'
-      ? (dirRev ? revStart : Math.max(0, edRevealCount - 1))
-      : (dirRev ? total - 1 : 0);
+    // 'step' mode replays only the most-recently-edited joint's fold;
+    // 'full' mode rebuilds the whole edited progress from scratch — a single
+    // segment (forward) or the fully-straight chain (reverse).
+    var step = animMode === 'step' ? Math.max(0, edRevealCount - 1) : 0;
 
     function doStep() {
       if (!edPlaying) return;
-      if (dirRev ? m < revStart : m > edRevealCount - 1) { stopEdAnim(); return; }
+      if (step > edRevealCount - 1) { stopEdAnim(); return; }
 
       var startTime = null;
 
@@ -459,9 +456,9 @@
         var rawT = Math.min(1, (now - startTime) / tweenMs);
         var t = rawT * rawT * (3 - 2 * rawT);
         var segs = dirRev
-          ? Snake.layout3DFrac(joints, m, t).slice(m)
-          : Snake.layout3DPartial(joints, m, t);
-        var invalid = dirRev ? invalidSegsForRevStep(total - 1 - m) : invalidSegsForStep(m);
+          ? Snake.layout3DFrac(reverseJoints(joints, step), 23 - step, t)
+          : Snake.layout3DPartial(joints, step, t);
+        var invalid = dirRev ? invalidSegsForRevStep(step) : invalidSegsForStep(step);
         Renderer3D.updateSegs(segs, { noFit: true, invalidSegs: invalid });
         if (rawT < 1) {
           edAnimRaf = requestAnimationFrame(frame);
@@ -470,7 +467,7 @@
         } else {
           edAnimTimer = setTimeout(function () {
             if (!edPlaying) return;
-            m += dirRev ? -1 : 1;
+            step++;
             doStep();
           }, holdMs);
         }
@@ -1108,13 +1105,18 @@
     var total = joints.length + 1;
     var dirRev = edBuildDir === 'rev';
     var numSegs = edRevealCount;
-    var revStart = total - edRevealCount;
     var subJoints = joints.slice(0, edRevealCount - 1);
     var xf = edXf[edSeg] || 0;
 
+    // Reverse mode shows the full 24-segment chain from the start — segments
+    // not yet edited are forced straight ('S') via reverseJoints, and fold
+    // into place one at a time as editing proceeds tail-first (23 -> 0).
+    var dispJoints = dirRev ? reverseJoints(joints, edRevealCount - 1) : subJoints;
+    var dispInvalid = dirRev ? invalidSegsForRevStep(edRevealCount - 1) : invalidSegsForStep(subJoints.length);
+
     var visibleIdxs = [];
     if (dirRev) {
-      for (var vi = total - 1; vi >= revStart; vi--) visibleIdxs.push(vi);
+      for (var vi = total - 1; vi >= 0; vi--) visibleIdxs.push(vi);
     } else {
       for (var vi = 0; vi < numSegs; vi++) visibleIdxs.push(vi);
     }
@@ -1130,16 +1132,6 @@
         'Seg&nbsp;' + i + '</button>';
     });
 
-    // In reverse mode the revealed window is the chain's tail end, computed
-    // off the same fixed segment-0 anchor as the full shape, then sliced down
-    // to just the visible segments — so it needs updateSegs (precomputed
-    // segs), not update (which always rebuilds from segment 0 alone).
-    function edInvalid() { return dirRev ? invalidSegsForRevStep(edRevealCount - 1) : invalidSegsForStep(subJoints.length); }
-    function edDraw(opts) {
-      if (dirRev) Renderer3D.updateSegs(Snake.layout3D(joints).slice(revStart), opts);
-      else Renderer3D.update(subJoints, opts);
-    }
-
     function rotRow(rval) {
       var v = ((Math.round(rval) % 360) + 360) % 360;
       return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
@@ -1150,7 +1142,7 @@
     }
 
     // "+ Add Segment" — only when there is a next joint left to reveal.
-    var nextIdx = dirRev ? revStart - 1 : edRevealCount;
+    var nextIdx = dirRev ? total - edRevealCount - 1 : edRevealCount;
     var addCardH = '';
     if (edRevealCount <= joints.length) {
       var swatches = Snake.COLORS.map(function (c) {
@@ -1238,10 +1230,11 @@
     // Build direction — switching resets progress, since reveal order flips.
     function switchEdDir(dir) {
       if (edBuildDir === dir) return;
-      var hasProgress = edRevealCount > 2 || Object.keys(edXf).length > 0;
+      var freshCount = edBuildDir === 'rev' ? 1 : 2;
+      var hasProgress = edRevealCount > freshCount || Object.keys(edXf).length > 0;
       if (hasProgress && !confirm('Switch build direction? This resets the segments and rotations you\'ve built so far.')) return;
       edBuildDir = dir;
-      edRevealCount = 2;
+      edRevealCount = dir === 'rev' ? 1 : 2;
       edXf = {};
       Snake.clearSegTransforms();
       edSeg = dir === 'rev' ? total - 1 : 0;
@@ -1275,7 +1268,7 @@
         var val = document.getElementById('ed-rot-val');
         if (val) val.textContent = next + '°';
         edFocusAll = true;
-        edDraw({ highlight: edSeg, focus: 'all', invalidSegs: edInvalid() });
+        Renderer3D.update(dispJoints, { highlight: edSeg, focus: 'all', invalidSegs: dispInvalid });
         updateSeqReadout();
       };
     });
@@ -1354,7 +1347,7 @@
       var v3 = document.getElementById('editor-3d');
       if (!v3) return;
       Renderer3D.init(v3);
-      edDraw({ highlight: edSeg, focus: edFocusAll ? 'all' : 'segment', invalidSegs: edInvalid() });
+      Renderer3D.update(dispJoints, { highlight: edSeg, focus: edFocusAll ? 'all' : 'segment', invalidSegs: dispInvalid });
       Renderer3D.setEditor({
         onSelect: function (idx) {
           if (idx === edSeg && !edFocusAll) return;

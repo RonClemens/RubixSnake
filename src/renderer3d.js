@@ -7,7 +7,7 @@ var Renderer3D = (function () {
   var invalidMeshes = [];
   var seamMeshes = [];
   var showSeams = false;
-  var spherical = { theta: Math.PI, phi: Math.PI / 2, r: 4 };
+  var spherical = { theta: Math.PI * 0.65, phi: 1.15, r: 4 };
   var orbitCenter = new THREE.Vector3();
 
   // Editor state
