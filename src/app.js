@@ -278,6 +278,15 @@
     return result;
   }
 
+  // Builds a 23-joint array where only the last k joints (indices 23-k..22,
+  // i.e. the tail) keep their real action; everything before that is forced
+  // 'S' (straight) as a placeholder for not-yet-revealed folds. Feeding this
+  // to Snake.layout3D/layout3DFrac always yields the full 24-segment chain,
+  // which is how reverse (23→0) mode reveals the snake tail-first.
+  function reverseJoints(joints, k) {
+    return Array(23 - k).fill('S').concat(joints.slice(23 - k, 23));
+  }
+
   function removeCustomShape(id) {
     Shapes.remove(id);
     var raw = localStorage.getItem('customShapes');
@@ -331,7 +340,14 @@
     var v3 = document.getElementById('view3d');
     if (v3) Renderer3D.init(v3);
     engPlaying = true;
-    if (animMode === 'full' && engStep >= 23) engStep = 0;
+    // Aligns playback to the puzzle's chosen folding direction: forward
+    // builds the chain 0→23, reverse plays the same geometry backward,
+    // unfolding tail-first (23→0), so it matches the Guide tab's direction.
+    var dir = guideReverse ? -1 : 1;
+    if (animMode === 'full') {
+      if (dir > 0 && engStep >= 23) engStep = 0;
+      if (dir < 0 && engStep <= 0) engStep = 23;
+    }
 
     var playBtn = document.getElementById('eng-play');
     if (playBtn) { playBtn.textContent = '⏸ Stop'; playBtn.style.color = '#f0883e'; }
@@ -345,7 +361,7 @@
     function doStep() {
       if (!engPlaying) return;
       var step = engStep;
-      if (step > 23) { stopEngAnim(); return; }
+      if (step > 23 || step < 0) { stopEngAnim(); return; }
 
       // Update slider + label
       var slider = document.getElementById('eng-slider');
@@ -365,7 +381,10 @@
         // second per segment, regardless of fold type.
         var rawT = Math.min(1, (now - startTime) / tweenMs);
         // smoothstep easing
-        var t = rawT * rawT * (3 - 2 * rawT);
+        var eased = rawT * rawT * (3 - 2 * rawT);
+        // dir>0: joint `step` folds in (0→1). dir<0: joint `step` (the most
+        // recently folded one) unfolds back out (1→0) before being dropped.
+        var t = dir > 0 ? eased : 1 - eased;
         Renderer3D.updateSegs(Snake.layout3DPartial(joints, step, t), { noFit: true, invalidSegs: invalidSegsForStep(step) });
         if (rawT < 1) {
           engAnimRaf = requestAnimationFrame(frame);
@@ -374,8 +393,9 @@
         } else {
           engAnimTimer = setTimeout(function () {
             if (!engPlaying) return;
-            engStep = step + 1;
+            engStep = step + dir;
             if (engStep > 23) { engStep = 23; stopEngAnim(); return; }
+            if (engStep < 0) { engStep = 0; stopEngAnim(); return; }
             doStep();
           }, holdMs);
         }
@@ -503,10 +523,64 @@
   }
 
   // ── guide navigation ───────────────────────────────────────────────────────
+  var guideAnimating = false;
+
   function navStep(delta) {
-    guideStep = Math.max(0, Math.min(24, guideStep + delta));
-    clearPhoto();
-    render();
+    if (guideAnimating) return;
+    var newStep = Math.max(0, Math.min(24, guideStep + delta));
+    if (newStep !== guideStep && activeShape &&
+        guideStep >= 1 && guideStep <= 23 && newStep >= 1 && newStep <= 23) {
+      animateGuideStep(guideStep, newStep);
+    } else {
+      guideStep = newStep;
+      clearPhoto();
+      render();
+    }
+  }
+
+  // Tweens the 3D view between two adjacent guide steps, folding/unfolding
+  // only the one joint that changed. Direction-aware: forward mode grows the
+  // chain from segment 0 (layout3DPartial); reverse mode reveals it
+  // tail-first from segment 23, using a forced-straight prefix + layout3DFrac
+  // so the in-progress fold animates the correct joint relative to the
+  // already-revealed tail instead of the head.
+  function animateGuideStep(oldStep, newStep) {
+    var v3 = document.getElementById('guide-3d');
+    if (!v3 || !activeShape) { guideStep = newStep; clearPhoto(); render(); return; }
+    var joints = activeShape.joints;
+    var growing = newStep > oldStep;
+    var animStep = growing ? newStep : oldStep; // the one joint that's mid-fold
+
+    var finalSegs = guideReverse
+      ? Snake.layout3D(reverseJoints(joints, newStep))
+      : Snake.layout3DPartial(joints, newStep, 1);
+    Renderer3D.init(v3);
+    Renderer3D.fitToSegs(finalSegs);
+
+    var invalidSegs = guideReverse ? invalidSegsForRevStep(newStep) : invalidSegsForStep(newStep);
+    guideAnimating = true;
+    var tweenMs = 1000 / animSpeed;
+    var startTime = null;
+
+    function frame(now) {
+      if (!startTime) startTime = now;
+      var rawT = Math.min(1, (now - startTime) / tweenMs);
+      var eased = rawT * rawT * (3 - 2 * rawT);
+      var frac = growing ? eased : 1 - eased;
+      var segs = guideReverse
+        ? Snake.layout3DFrac(reverseJoints(joints, animStep), 23 - animStep, frac)
+        : Snake.layout3DPartial(joints, animStep, frac);
+      Renderer3D.updateSegs(segs, { noFit: true, invalidSegs: invalidSegs });
+      if (rawT < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        guideAnimating = false;
+        guideStep = newStep;
+        clearPhoto();
+        render();
+      }
+    }
+    requestAnimationFrame(frame);
   }
 
   function clearPhoto() { iSrc = null; iB64 = null; iMime = 'image/jpeg'; busy = false; verRes = null; verOk = false; }
@@ -897,9 +971,7 @@
       if (v3) {
         Renderer3D.init(v3);
         if (guideReverse) {
-          // Show all 24 segments: first (23-guideStep) joints straight, last guideStep joints folded
-          var revJts = Array(23 - guideStep).fill('S').concat(joints.slice(23 - guideStep, 23));
-          Renderer3D.update(revJts, { highlight: bi, invalidSegs: invalidSegsForRevStep(guideStep) });
+          Renderer3D.update(reverseJoints(joints, guideStep), { highlight: bi, invalidSegs: invalidSegsForRevStep(guideStep) });
         } else {
           Renderer3D.update(joints.slice(0, guideStep), { highlight: bi, invalidSegs: invalidSegsForStep(guideStep) });
         }

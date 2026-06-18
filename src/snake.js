@@ -302,12 +302,53 @@ var Snake = (function () {
     return segs;
   }
 
+  // Same as layout3D (always returns the full joints.length+1 segments — no
+  // truncation), but the joint at index fracIdx is applied at fraction t in
+  // [0,1]; every other joint applies its full action. Used to tween a single
+  // joint mid-chain — e.g. to animate a snake being revealed tail-first (in
+  // reverse fold order), where the not-yet-revealed prefix is passed in as
+  // 'S' placeholders and stays straight regardless of t.
+  function layout3DFrac(joints, fracIdx, t) {
+    var L = Math.SQRT1_2;
+    var segs = [];
+    segs.push({
+      idx: 0,
+      f: [[ 0, -L/2,  0.5], [-L,  L/2,  0.5], [ L,  L/2,  0.5]],
+      b: [[ 0, -L/2, -0.5], [-L,  L/2, -0.5], [ L,  L/2, -0.5]],
+    });
+    for (var i = 1; i <= joints.length; i++) {
+      var prev = segs[i - 1];
+      var depthDir = vnorm(vsub(prev.f[0], prev.b[0]));
+      var other = prev.idx % 2 === 0 ? 2 : 1;
+      var axisPt = vmid(prev.f[0], prev.f[other]);
+      var pf = prev.f.map(function (v) { return _rotateAround(v, axisPt, depthDir, Math.PI); });
+      var pb = prev.b.map(function (v) { return _rotateAround(v, axisPt, depthDir, Math.PI); });
+      var jt = joints[i - 1];
+      if (jt === 'R' || jt === 'L' || jt === 'F') {
+        var baseAngle = jt === 'F' ? Math.PI : (jt === 'R' ? 1 : -1) * Math.PI / 2;
+        var frac = (i - 1 === fracIdx) ? t : 1;
+        var angle = baseAngle * frac;
+        if (Math.abs(angle) > 1e-9) {
+          var inPlaneDir = vnorm(vsub(prev.f[other], prev.f[0]));
+          var hingeAxis = vnorm(vcross(depthDir, inPlaneDir));
+          var pivot = vmid(vmid(prev.f[0], prev.b[0]), vmid(prev.f[other], prev.b[other]));
+          pf = pf.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
+          pb = pb.map(function (v) { return _rotateAround(v, pivot, hingeAxis, angle); });
+        }
+      }
+      segs.push({ idx: i, f: pf, b: pb });
+      applyXform(segs[i], prev);
+    }
+    return segs;
+  }
+
   return {
     COLORS: COLORS,
     segColor: segColor,
     layout2D: layout2D,
     layout3D: layout3D,
     layout3DPartial: layout3DPartial,
+    layout3DFrac: layout3DFrac,
     findOverlaps: findOverlaps,
     setSegTransform: setSegTransform,
     clearSegTransforms: clearSegTransforms,
