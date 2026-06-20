@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>Rubix Snake Guide</title>
 <link rel="stylesheet" href="src/styles.css">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1117">
 </head>
 <body>
 <div id="app">
@@ -59,5 +61,8 @@
 <script src="src/renderer3d.js"></script>
 <script src="src/movesEngine.js"></script>
 <script src="src/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
 </body>
 </html>

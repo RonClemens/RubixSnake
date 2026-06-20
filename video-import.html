@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Video → Shape Draft</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  body { margin:0; background:#0d1117; color:#c9d1d9; font-family:-apple-system,system-ui,sans-serif; padding:16px; }
+  h1 { font-size:16px; margin:0 0 12px; }
+  .card { background:#161b22; border:1px solid #30363d; border-radius:10px; padding:12px; margin-bottom:12px; }
+  label { display:block; font-size:11px; color:#8b949e; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+  input, textarea { width:100%; box-sizing:border-box; padding:9px; background:#0d1117; border:1px solid #30363d; border-radius:7px; color:#c9d1d9; font-size:13px; font-family:monospace; }
+  textarea { resize:vertical; }
+  button { width:100%; padding:10px; margin-top:8px; background:#238636; border:none; border-radius:8px; color:#fff; font-size:14px; font-weight:700; }
+  button.secondary { background:#21262d; border:1px solid #30363d; color:#c9d1d9; }
+  #status { font-size:12px; color:#8b949e; margin-top:8px; white-space:pre-wrap; }
+  #status.err { color:#f85149; }
+  #status.ok { color:#3fb950; }
+  a { color:#58a6ff; }
+</style>
+</head>
+<body>
+  <h1>🎥 → 🐍 Video Shape Draft</h1>
+
+  <div class="card">
+    <label>YouTube URL</label>
+    <input id="url" placeholder="https://youtu.be/...">
+    <button id="go">Get Draft</button>
+  </div>
+
+  <div class="card">
+    <label>Caption-fetch worker URL <span style="opacity:.6">(one-time setup)</span></label>
+    <input id="worker" placeholder="https://your-worker.your-subdomain.workers.dev">
+    <div style="font-size:11px;color:#6e7681;margin-top:6px">
+      Deploy <code>worker/captions-worker.js</code> from the repo to your own free
+      Cloudflare account, then paste its URL here. Saved on this device only.
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <label>Draft JSON — paste into Editor → Import</label>
+    <textarea id="result" rows="10" readonly></textarea>
+    <button id="copy" class="secondary">📋 Copy</button>
+  </div>
+
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var statusEl = $('status');
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text || '';
+    statusEl.className = cls || '';
+  }
+
+  // Pre-fill from share_target params (?url=, ?text=, ?title=) or a manual visit.
+  var qp = new URLSearchParams(location.search);
+  var shared = qp.get('url') || qp.get('text') || qp.get('title') || '';
+  var m = shared.match(/https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/\S+/i);
+  if (m) $('url').value = m[0];
+
+  $('worker').value = localStorage.getItem('rs-worker-url') || '';
+  $('worker').addEventListener('change', function () {
+    localStorage.setItem('rs-worker-url', $('worker').value.trim());
+  });
+
+  $('go').onclick = function () {
+    var url = $('url').value.trim();
+    var worker = $('worker').value.trim();
+    $('resultCard').style.display = 'none';
+    if (!url) { setStatus('Paste a YouTube URL first.', 'err'); return; }
+    if (!worker) { setStatus('Set your captions-worker URL above first (one-time setup).', 'err'); return; }
+
+    setStatus('Fetching captions and drafting joints…');
+    $('go').disabled = true;
+
+    fetch(worker.replace(/\/$/, '') + '/?url=' + encodeURIComponent(url))
+      .then(function (r) {
+        if (!r.ok) throw new Error('Worker returned HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (shape) {
+        $('result').value = JSON.stringify(shape, null, 2);
+        $('resultCard').style.display = '';
+        setStatus(shape.description || 'Draft ready.', 'ok');
+      })
+      .catch(function (e) {
+        setStatus('Failed: ' + e.message, 'err');
+      })
+      .finally(function () { $('go').disabled = false; });
+  };
+
+  $('copy').onclick = function () {
+    var ta = $('result');
+    navigator.clipboard.writeText(ta.value).then(function () {
+      setStatus('Copied — switch to the app, Editor tab → Import, and paste.', 'ok');
+    }).catch(function () {
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      ta.setSelectionRange(0, 0);
+      setStatus(ok
+        ? 'Copied — switch to the app, Editor tab → Import, and paste.'
+        : 'Couldn\'t copy automatically — the text above is selected, copy it manually.', ok ? 'ok' : 'err');
+    });
+  };
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
