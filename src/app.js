@@ -42,6 +42,10 @@
   var iSrc = null, iB64 = null, iMime = 'image/jpeg';
   var busy = false, verRes = null, verOk = false;
   var akey = localStorage.getItem('sak') || '';
+  // ── photo-scan (flat shape draft) state ────────────────────────────────────
+  var scanSrc = null;
+  var scanMarker = null;   // {x,y} fraction (0..1) of image where user tapped the start segment
+  var scanBusy = false, scanErr = '', scanDraftJson = '';
   var showSeams = localStorage.getItem('seams') !== '0'; // on by default
   var pausedStep = 0;          // guideStep saved when leaving a puzzle mid-way via #homebtn
   var pausedShapeId = null;    // activeShape.id this pausedStep belongs to
@@ -513,6 +517,168 @@
         onSuccess();
       }
     };
+  }
+
+  // ── photo-scan (flat shape draft) ───────────────────────────────────────────
+  // MVP scope: a fully flat, single-layer assembled shape only (matching a
+  // photo taken from directly above). Snake.layout3D proves only 'S' and 'F'
+  // joints can ever keep a chain coplanar — any 'R'/'L' immediately leaves the
+  // plane and never returns — so a flat photo never needs those two letters.
+  // That collapses the AI's job from "name the exact internal joint code" (a
+  // non-obvious rotation convention) down to a much more reliable question:
+  // "does the path continue in the same row, or turn the corner into a new
+  // row?" — answerable directly from the image, row by row.
+  function scanCardHtml() {
+    var img = scanSrc
+      ? '<div id="scan-imgwrap" style="position:relative;width:100%;border-radius:8px;overflow:hidden;touch-action:none">' +
+          '<img id="scan-img" src="' + scanSrc + '" style="width:100%;display:block">' +
+          (scanMarker ? '<div style="position:absolute;left:' + (scanMarker.x*100) + '%;top:' + (scanMarker.y*100) + '%;width:26px;height:26px;margin-left:-13px;margin-top:-13px;border-radius:50%;background:rgba(248,81,73,.25);border:2.5px solid #f85149;box-shadow:0 0 0 2px rgba(0,0,0,.4)"></div>' : '') +
+        '</div>' +
+        '<p style="color:#6e7681;font-size:11px;margin:6px 0 0">' + (scanMarker ? 'Tap again to move the marker.' : 'Tap the photo on the starting segment (the one you\'re pointing to).') + '</p>'
+      : '<div style="display:flex;flex-direction:column;gap:8px">' +
+        '<label class="ubtn" style="background:rgba(88,166,255,.1);border:2px solid #58a6ff66;color:#58a6ff">📷 Open Camera<input type="file" accept="image/*" capture="environment" id="scan-ic"></label>' +
+        '<label class="ubtn" style="background:rgba(255,255,255,.04);border:1.5px solid #30363d;color:#8b949e;font-size:13px">🖼 Gallery<input type="file" accept="image/*" id="scan-ig"></label>' +
+        '</div>';
+
+    var retakeH = scanSrc ? '<label class="ubtn" style="margin-top:7px;background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:12px;border-radius:8px;padding:9px">↺ Retake<input type="file" accept="image/*" id="scan-ir"></label>' : '';
+
+    return '<div class="card">' +
+      '<div class="lbl">🔬 Draft from a flat photo</div>' +
+      '<p style="color:#6e7681;font-size:11px;margin-bottom:8px">Photograph the puzzle fully assembled flat (one layer, no 3D folds), straight-on from above. Mark the starting segment, then let AI draft the row-by-row joints below — fill in any &quot;?&quot; segments by hand afterward.</p>' +
+      img + retakeH +
+      (scanSrc ? '<button id="scan-go" style="margin-top:8px;width:100%;padding:10px;background:' + (scanMarker && akey ? '#238636' : '#21262d') + ';border:1px solid #30363d;border-radius:8px;color:#fff;font-size:13px;font-weight:700">' + (scanBusy ? 'Analyzing…' : '✨ Draft Joints with AI') + '</button>' : '') +
+      (scanErr ? '<div style="color:#f85149;font-size:11px;margin-top:8px;white-space:pre-wrap">' + scanErr + '</div>' : '') +
+    '</div>';
+  }
+
+  function onScanFile(f) {
+    if (!f) return;
+    scanMarker = null; scanErr = ''; scanDraftJson = '';
+    var r = new FileReader();
+    r.onload = function (e) {
+      scanSrc = e.target.result;
+      renderEditor();
+    };
+    r.readAsDataURL(f);
+  }
+
+  // Draws the uploaded photo onto an offscreen canvas with a baked-in arrow
+  // marker at the tapped point, so the marker travels with the image bytes
+  // sent to the API (DOM overlays aren't part of the photo's pixel data).
+  function composeMarkedImage(cb) {
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      var ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      if (scanMarker) {
+        var x = scanMarker.x * c.width, y = scanMarker.y * c.height;
+        var r = Math.max(c.width, c.height) * 0.025;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(248,81,73,.35)'; ctx.fill();
+        ctx.lineWidth = Math.max(3, r * 0.18); ctx.strokeStyle = '#f85149'; ctx.stroke();
+        ctx.font = 'bold ' + Math.round(r * 0.9) + 'px sans-serif';
+        ctx.fillStyle = '#f85149'; ctx.textAlign = 'center';
+        ctx.fillText('START', x, y - r - 6);
+      }
+      cb(c.toDataURL('image/jpeg', 0.9).split(',')[1]);
+    };
+    img.src = scanSrc;
+  }
+
+  // Turns a model-reported row sequence into joints: 'S' while the row stays
+  // the same as the previous segment, 'F' (180° flip) when it changes — the
+  // only two letters Snake.layout3D can ever keep coplanar (see comment
+  // above scanCardHtml). Any segment the model couldn't place keeps '?'.
+  function joinsFromRows(rows) {
+    var joints = [];
+    for (var i = 0; i < 23; i++) {
+      var r0 = rows[i], r1 = rows[i + 1];
+      if (r0 == null || r1 == null) { joints.push('?'); continue; }
+      joints.push(r0 === r1 ? 'S' : 'F');
+    }
+    return joints;
+  }
+
+  function analyzeScan() {
+    if (!scanSrc || !scanMarker) return;
+    if (!akey) { alert('Enter your Anthropic API key — tap ⚙'); return; }
+    scanBusy = true; scanErr = ''; renderEditor();
+    composeMarkedImage(function (b64) {
+      var prompt = 'This photo shows a Rubik\'s Snake / Twist puzzle assembled fully FLAT (one layer, no 3D folds) — a zig-zag chain of triangular-prism segments forming rows. The circled "START" marker shows the first segment.\n\n' +
+        'Colors repeat: 1=Blue 2=Orange 3=Pink 4=White 5=Red 6=Green.\n\n' +
+        'Trace the chain segment-by-segment starting at the marked segment, following physically touching segments in order, for up to 24 segments total. The chain runs in straight rows and turns a sharp 180° corner to start each new row (like a typewriter return) — it never turns a corner mid-row.\n\n' +
+        'Reply with ONLY a JSON array, one object per segment, no other text:\n' +
+        '[{"seg":1,"color":"Blue","row":1}, {"seg":2,"color":"Orange","row":1}, {"seg":3,"color":"Pink","row":2}, ...]\n\n' +
+        '"row" is a 1-based row number — increment it each time the chain turns the corner into a new row, keep it the same while the chain continues straight along a row. If you lose track of the chain partway through, stop the array there rather than guessing.';
+      fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': akey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-opus-4-5', max_tokens: 1500,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+            { type: 'text',  text: prompt },
+          ]}],
+        }),
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.error) throw new Error(d.error.message);
+        var t = (d.content && d.content[0] && d.content[0].text) || '';
+        var m = t.match(/\[[\s\S]*\]/);
+        if (!m) throw new Error('No JSON array in response:\n' + t);
+        var rowsArr = JSON.parse(m[0]);
+        if (!Array.isArray(rowsArr) || !rowsArr.length) throw new Error('Empty trace — try a clearer photo or a different angle.');
+        rowsArr.sort(function (a, b) { return (a.seg || 0) - (b.seg || 0); });
+        var rows = rowsArr.map(function (e) { return e.row; });
+        var joints = joinsFromRows(rows);
+        var steps = joints.map(function (jt, i) {
+          var e0 = rowsArr[i], e1 = rowsArr[i + 1];
+          var desc = (jt === '?')
+            ? 'Not traced from the photo — fill this fold in by hand.'
+            : (e0 && e1 ? (e0.color || '?') + ' → ' + (e1.color || '?') + ': ' + (jt === 'S' ? 'continue straight (same row).' : 'flip 180° into the next row.') : '');
+          return { segment: i + 1, action: jt, description: desc };
+        });
+        var resolved = joints.filter(function (jt) { return jt !== '?'; }).length;
+        var shape = {
+          name: 'Photo Scan Draft',
+          emoji: '📷',
+          description: 'Auto-drafted from a flat photo (' + resolved + '/23 folds traced). Import this, then use the orange-highlighted "?" segments as your to-do list to finish by hand.',
+          closing: 'Close the two ends together to lock the shape.',
+          steps: steps,
+        };
+        scanDraftJson = JSON.stringify(shape, null, 2);
+        scanBusy = false;
+        renderEditor();
+        var impJson = document.getElementById('imp-json');
+        var impName = document.getElementById('imp-name');
+        if (impJson) impJson.value = scanDraftJson;
+        if (impName) impName.value = 'Photo Scan Draft';
+      }).catch(function (e) {
+        scanErr = 'Failed: ' + e.message;
+        scanBusy = false;
+        renderEditor();
+      });
+    });
+  }
+
+  function wireScanCard() {
+    var ic = document.getElementById('scan-ic'); if (ic) ic.onchange = function () { onScanFile(this.files[0]); };
+    var ig = document.getElementById('scan-ig'); if (ig) ig.onchange = function () { onScanFile(this.files[0]); };
+    var ir = document.getElementById('scan-ir'); if (ir) ir.onchange = function () { onScanFile(this.files[0]); };
+    var imgEl = document.getElementById('scan-img');
+    if (imgEl) imgEl.onclick = function (e) {
+      var rect = imgEl.getBoundingClientRect();
+      scanMarker = { x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height };
+      renderEditor();
+    };
+    var go = document.getElementById('scan-go');
+    if (go) go.onclick = function () { if (!scanBusy) analyzeScan(); };
   }
 
   function switchTab(t) {
@@ -1208,6 +1374,7 @@
         '<button id="ed-save-btn" style="width:100%;padding:10px;background:#238636;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700">&#128190; Save as New Shape</button>' +
         '<div id="ed-save-msg" style="font-size:11px;margin-top:6px"></div>' +
       '</div>' +
+      scanCardHtml() +
       importCardHtml();
 
     // Segment selector
@@ -1328,6 +1495,8 @@
       msg.textContent = 'Saved "' + name + '" — find it in Guide → Choose a shape.';
       msg.style.color = '#3fb950';
     };
+
+    wireScanCard();
 
     // Import a shape (JSON) directly from the Editor
     wireImportCard(function () {
