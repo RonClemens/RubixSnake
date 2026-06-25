@@ -554,12 +554,14 @@
   function onScanFile(f) {
     if (!f) return;
     scanMarker = null; scanErr = ''; scanDraftJson = '';
-    var r = new FileReader();
-    r.onload = function (e) {
-      scanSrc = e.target.result;
-      renderEditor();
-    };
-    r.readAsDataURL(f);
+    // An object URL (not a data: URI) keeps the <img src> a short reference —
+    // embedding a full base64 photo in pg.innerHTML on every re-render (this
+    // tab re-renders on most interactions) is heavy enough on a real phone
+    // camera photo (several MB) to make the page lock up and taps appear to
+    // do nothing.
+    if (scanSrc) URL.revokeObjectURL(scanSrc);
+    scanSrc = URL.createObjectURL(f);
+    renderEditor();
   }
 
   // Draws the uploaded photo onto an offscreen canvas with a baked-in arrow
